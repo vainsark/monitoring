@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+option go_package = "github.com/vainsark/monitoring/loadmonitor_proto";
+
+package loadmonitor;
+
+service LoadMonitor {
+    rpc LoadData (Metrics) returns (MetricsAck);
+}
+
+message Metric {
+    int32 Id = 1;
+    string DataName = 2;
+    float Data = 3;
+}
+
+message Metrics {
+    repeated Metric Metrics = 1;
+}
+
+message MetricsAck {
+    int32 Ack = 1;
+}
