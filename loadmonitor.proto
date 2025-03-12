@@ -11,7 +11,7 @@ service LoadMonitor {
 message Metric {
     int32 Id = 1;
     string DataName = 2;
-    float Data = 3;
+    double Data = 3;
 }
 
 message Metrics {

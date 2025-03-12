@@ -14,7 +14,19 @@ type server struct {
 }
 
 func (s *server) LoadData(ctx context.Context, in *pb.Metrics) (*pb.MetricsAck, error) {
-	log.Printf("Received metrics: %v", in)
+	for _, metric := range in.Metrics {
+		switch metric.DataName {
+		case "cpu":
+			log.Printf("CPU load: %.2f%%", metric.Data)
+		case "memory":
+			log.Printf("Memory utilization: %.2f%%", metric.Data)
+		case "disk":
+			log.Printf("Disk usage: %.2f%%", metric.Data)
+		default:
+			log.Printf("%s: %f", metric.DataName, metric.Data)
+		}
+	}
+	log.Println("=======================================")
 
 	return &pb.MetricsAck{Ack: 1}, nil
 }
