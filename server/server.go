@@ -7,6 +7,12 @@ import (
 
 	pb "github.com/vainsark/monitoring/loadmonitor_proto"
 	"google.golang.org/grpc"
+	// influxdb2 "github.com/influxdata/influxdb-client-go/v2"
+)
+
+var (
+	// InfluxDB client configuration
+	influxURL = "http://localhost:8086"
 )
 
 type server struct {
