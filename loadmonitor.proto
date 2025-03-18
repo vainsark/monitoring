@@ -10,8 +10,9 @@ service LoadMonitor {
 
 message Metric {
     int32 Id = 1;
-    string DataName = 2;
-    double Data = 3;
+    int32 agentId = 2;
+    string DataName = 3;
+    double Data = 4;
 }
 
 message Metrics {
