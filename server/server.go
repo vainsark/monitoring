@@ -31,19 +31,28 @@ func (s *server) LoadData(ctx context.Context, in *pb.Metrics) (*pb.MetricsAck, 
 	writeAPI := s.influxClient.WriteAPIBlocking(s.org, s.bucket)
 
 	for _, metric := range in.Metrics {
-		// Define the measurement name. You can adjust this as needed.
-		measurementName := "system_metrics"
-
-		// Create a point with a tag for the metric type and a field for its value.
-		p := influxdb2.NewPoint(
-			measurementName,
+		// Define the Agent name.
+		agentName := ""
+		switch metric.AgentId {
+		case 1:
+			agentName = "Load"
+		case 2:
+			agentName = "Latency"
+		case 3:
+			agentName = "Availability"
+		default:
+			agentName = "Misc"
+		}
+		// Create an entry the agent name and a field for its value.
+		entry := influxdb2.NewPoint(
+			agentName,
 			map[string]string{"type": metric.DataName},
 			map[string]interface{}{"value": metric.Data},
-			t.Now(), // Use the current time as the timestamp
+			t.Now(),
 		)
 
 		// Write the point to InfluxDB
-		if err := writeAPI.WritePoint(ctx, p); err != nil {
+		if err := writeAPI.WritePoint(ctx, entry); err != nil {
 			log.Printf("Error writing point to InfluxDB: %v", err)
 		}
 
@@ -56,7 +65,7 @@ func (s *server) LoadData(ctx context.Context, in *pb.Metrics) (*pb.MetricsAck, 
 		case "disk":
 			log.Printf("Disk usage: %.2f%%", metric.Data)
 		default:
-			log.Printf("%s: %.2f", metric.DataName, metric.Data)
+			log.Printf("%s (%s): %.2f", metric.DataName, agentName, metric.Data)
 		}
 	}
 	log.Println("=======================================")

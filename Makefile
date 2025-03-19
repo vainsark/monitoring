@@ -17,6 +17,10 @@
 # 	  -d @$DASHBOARD_DIR/your-dashboard.json \
 # 	  $(GRAFANA_URL)/api/dashboards/db
 
+# =====================
+# export PATH=$PATH:$(go env GOPATH)/bin
+
+# sudo /usr/local/go/bin/go run latency_agent.go 
 
 generate_grpc_code:
 	protoc \

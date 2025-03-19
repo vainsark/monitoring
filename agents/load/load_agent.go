@@ -6,6 +6,7 @@ import (
 	"log"
 	t "time"
 
+	"github.com/shirou/gopsutil/net"
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/disk"
 	"github.com/shirou/gopsutil/v4/mem"
@@ -14,7 +15,11 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-func updateOrAppendMetric(metrics []*pb.Metric, id int32, dataName string, data float64) []*pb.Metric {
+const (
+	AgentID = 1
+)
+
+func updateOrAppendMetric(metrics []*pb.Metric, id int32, agentId int32, dataName string, data float64) []*pb.Metric {
 	for i, m := range metrics {
 		if m.DataName == dataName {
 			metrics[i].Data = data
@@ -23,6 +28,7 @@ func updateOrAppendMetric(metrics []*pb.Metric, id int32, dataName string, data 
 	}
 	newMetric := &pb.Metric{
 		Id:       id,
+		AgentId:  agentId,
 		DataName: dataName,
 		Data:     data,
 	}
@@ -44,8 +50,20 @@ func main() {
 	scnInterval := 5
 	timePast := 0
 	//=======================================================
-
+	type bytesstat struct {
+		BytesSent uint64
+		BytesRecv uint64
+	}
+	BytesStat := bytesstat{}
+	netStats, err := net.IOCounters(false)
+	if err != nil {
+		log.Fatalf("Error while getting Network IO Counters: %v", err)
+	}
+	BytesStat.BytesSent = netStats[0].BytesSent
+	BytesStat.BytesRecv = netStats[0].BytesRecv
+	//=======================================================
 	for {
+		// MAIN LOOP
 		fmt.Printf("============= Scan time: %ds ==============\n", timePast)
 		// CPU Usage
 		cpuPercent, err := cpu.Percent(0, false)
@@ -53,7 +71,7 @@ func main() {
 			log.Fatalf("Error while getting CPU usage: %v", err)
 		}
 		// fmt.Printf("CPU Usage: %.2f%%\n", cpuPercent)
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, 1, "cpu", cpuPercent[0])
+		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, 1, AgentID, "cpu", cpuPercent[0])
 
 		// Memory Usage
 		vmStat, err := mem.VirtualMemory()
@@ -61,21 +79,29 @@ func main() {
 		if err != nil {
 			log.Fatalf("Error while getting memory usage: %v", err)
 		}
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, 2, "memory", vmStat.UsedPercent)
+		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, 2, AgentID, "memory", vmStat.UsedPercent)
 
-		// Swap Memory Usage
-		swapStat, err := mem.SwapMemory()
+		// // Swap Memory Usage
+		// swapStat, err := mem.SwapMemory()
+		// if err != nil {
+		// 	log.Fatalf("Error while getting memory swaps: %v", err)
+		// }
+		// // fmt.Printf("Swap Usage: %.2f%% (Total: %v MB, Used: %v MB)\n", swapStat.UsedPercent, swapStat.Total/1024/1024, swapStat.Used/1024/1024)
+		// metrics.Metrics = updateOrAppendMetric(metrics.Metrics, 3, AgentID+2, "swaps", swapStat.UsedPercent)
+
+		// Network Statistics
+		netStats, err := net.IOCounters(false)
 		if err != nil {
-			log.Fatalf("Error while getting memory swaps: %v", err)
+			log.Fatalf("Error while getting Network IO Counters: %v", err)
 		}
-		// fmt.Printf("Swap Usage: %.2f%% (Total: %v MB, Used: %v MB)\n", swapStat.UsedPercent, swapStat.Total/1024/1024, swapStat.Used/1024/1024)
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, 3, "swaps", swapStat.UsedPercent)
-
-		// // Network Statistics
-		// netStats, err := net.IOCounters(false)
 		// for _, stat := range netStats {
 		// 	fmt.Printf("Network - Sent: %v MB, Received: %v MB\n", stat.BytesSent/1024/1024, stat.BytesRecv/1024/1024)
 		// }
+		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, 3, AgentID, "BytesOut", float64(netStats[0].BytesSent-BytesStat.BytesSent)/1024)
+		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, 4, AgentID, "BytesIn", float64(netStats[0].BytesRecv-BytesStat.BytesRecv)/1024)
+		fmt.Printf("Network - Sent: %v kB, Received: %v kB\n", (netStats[0].BytesSent-BytesStat.BytesSent)/1024, (netStats[0].BytesRecv-BytesStat.BytesRecv)/1024)
+		BytesStat.BytesSent = netStats[0].BytesSent
+		BytesStat.BytesRecv = netStats[0].BytesRecv
 
 		// Storage (Disk Usage)
 		diskStat, err := disk.Usage("/")
@@ -83,7 +109,7 @@ func main() {
 			log.Fatalf("Error while getting disk usage: %v", err)
 		}
 		// fmt.Printf("Disk Usage: %.2f%% (Total: %v GB, Used: %v GB)\n", diskStat.UsedPercent, diskStat.Total/1024/1024/1024, diskStat.Used/1024/1024/1024)
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, 4, "disk", diskStat.UsedPercent)
+		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, 5, AgentID, "disk", diskStat.UsedPercent)
 
 		//=======================================================
 
