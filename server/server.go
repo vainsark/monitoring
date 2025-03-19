@@ -13,8 +13,9 @@ import (
 
 var (
 	// InfluxDB client configuration
-	influxURL    = "http://localhost:8086"
-	influxToken  = "dvKsoUSbn-7vW04bNFdZeL87TNissgRP43i_ttrg-Vx3LdkzKJHucylmomEasS9an7lGv_TyZRj6-dHINMjXVA=="
+	influxURL = "http://localhost:8086"
+	// influxToken  = "dvKsoUSbn-7vW04bNFdZeL87TNissgRP43i_ttrg-Vx3LdkzKJHucylmomEasS9an7lGv_TyZRj6-dHINMjXVA=="
+	influxToken  = "Ib2fq58MyBy2OUR9Aa3Lv2BN1uNBYnwMTsx4pyOSDzqoLZF6qKMTnfsB7hRO0_aFwxEOUPtbt3NUmyvs8RyhCw==" // Laptop
 	influxOrg    = "vainsark"
 	influxBucket = "metrics"
 )

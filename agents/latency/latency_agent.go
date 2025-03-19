@@ -97,8 +97,8 @@ func main() {
 		// Convert the output (bytes) to a string.
 		outputStr := string(output)
 		fields := strings.Fields(outputStr)
-		fmt.Println("avg read wait:", fields[1])
-		fmt.Println("avg write wait:", fields[2])
+		fmt.Println("avg read wait:", fields[2])
+		fmt.Println("avg write wait:", fields[3])
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*t.Second)
 		resp, err := client.LoadData(ctx, metrics)
