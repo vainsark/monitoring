@@ -6,6 +6,8 @@ import (
 	"log"
 	t "time"
 
+	"github.com/vainsark/monitoring/agents/defs"
+
 	"github.com/shirou/gopsutil/net"
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/disk"
@@ -36,8 +38,7 @@ func updateOrAppendMetric(metrics []*pb.Metric, id int32, agentId int32, dataNam
 }
 
 func main() {
-
-	// conn, err := grpc.Dial("localhost:50051", grpc.WithInsecure())
+	fmt.Print(defs.LoadID)
 	conn, err := grpc.NewClient("localhost:50051", grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Fatalf("could not connect: %v", err)
@@ -65,7 +66,9 @@ func main() {
 	for {
 		// MAIN LOOP
 		fmt.Printf("============= Scan time: %ds ==============\n", timePast)
-		// CPU Usage
+
+		//============================= CPU Usage =============================
+
 		cpuPercent, err := cpu.Percent(0, false)
 		if err != nil {
 			log.Fatalf("Error while getting CPU usage: %v", err)
@@ -73,37 +76,31 @@ func main() {
 		// fmt.Printf("CPU Usage: %.2f%%\n", cpuPercent)
 		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, 1, AgentID, "cpu", cpuPercent[0])
 
-		// Memory Usage
+		//============================= Memory Usage =============================
+
 		vmStat, err := mem.VirtualMemory()
-		// fmt.Printf("Memory Usage: %.2f%% (Total: %v MB, Used: %v MB)\n", vmStat.UsedPercent, vmStat.Total/1024/1024, vmStat.Used/1024/1024)
 		if err != nil {
 			log.Fatalf("Error while getting memory usage: %v", err)
 		}
+		// fmt.Printf("Memory Usage: %.2f%% (Total: %v MB, Used: %v MB)\n", vmStat.UsedPercent, vmStat.Total/1024/1024, vmStat.Used/1024/1024)
 		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, 2, AgentID, "memory", vmStat.UsedPercent)
 
-		// // Swap Memory Usage
-		// swapStat, err := mem.SwapMemory()
-		// if err != nil {
-		// 	log.Fatalf("Error while getting memory swaps: %v", err)
-		// }
-		// // fmt.Printf("Swap Usage: %.2f%% (Total: %v MB, Used: %v MB)\n", swapStat.UsedPercent, swapStat.Total/1024/1024, swapStat.Used/1024/1024)
-		// metrics.Metrics = updateOrAppendMetric(metrics.Metrics, 3, AgentID+2, "swaps", swapStat.UsedPercent)
-
-		// Network Statistics
+		//============================= Network Statistics =============================
 		netStats, err := net.IOCounters(false)
 		if err != nil {
 			log.Fatalf("Error while getting Network IO Counters: %v", err)
 		}
-		// for _, stat := range netStats {
-		// 	fmt.Printf("Network - Sent: %v MB, Received: %v MB\n", stat.BytesSent/1024/1024, stat.BytesRecv/1024/1024)
-		// }
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, 3, AgentID, "BytesOut", float64(netStats[0].BytesSent-BytesStat.BytesSent)/1024)
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, 4, AgentID, "BytesIn", float64(netStats[0].BytesRecv-BytesStat.BytesRecv)/1024)
-		fmt.Printf("Network - Sent: %v kB, Received: %v kB\n", (netStats[0].BytesSent-BytesStat.BytesSent)/1024, (netStats[0].BytesRecv-BytesStat.BytesRecv)/1024)
+
+		kBsOut := float64(netStats[0].BytesSent-BytesStat.BytesSent) / 1024 / float64(scnInterval)
+		kBsIn := float64(netStats[0].BytesRecv-BytesStat.BytesRecv) / 1024 / float64(scnInterval)
+		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, 3, AgentID, "BytesOut", kBsOut)
+		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, 4, AgentID, "BytesIn", kBsIn)
+		fmt.Printf("Network - Sent: %v kB/s, Received: %v kB/s\n", kBsOut, kBsIn)
 		BytesStat.BytesSent = netStats[0].BytesSent
 		BytesStat.BytesRecv = netStats[0].BytesRecv
 
-		// Storage (Disk Usage)
+		//============================= Storage (Disk Usage) =============================
+
 		diskStat, err := disk.Usage("/")
 		if err != nil {
 			log.Fatalf("Error while getting disk usage: %v", err)
@@ -111,7 +108,7 @@ func main() {
 		// fmt.Printf("Disk Usage: %.2f%% (Total: %v GB, Used: %v GB)\n", diskStat.UsedPercent, diskStat.Total/1024/1024/1024, diskStat.Used/1024/1024/1024)
 		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, 5, AgentID, "disk", diskStat.UsedPercent)
 
-		//=======================================================
+		//==================================================================================
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*t.Second)
 		resp, err := client.LoadData(ctx, metrics)
