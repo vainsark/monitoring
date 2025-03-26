@@ -1,4 +1,35 @@
 {
+  "__inputs": [
+    {
+      "name": "DS_INFLUXDB",
+      "label": "influxdb",
+      "description": "",
+      "type": "datasource",
+      "pluginId": "influxdb",
+      "pluginName": "InfluxDB"
+    }
+  ],
+  "__elements": {},
+  "__requires": [
+    {
+      "type": "grafana",
+      "id": "grafana",
+      "name": "Grafana",
+      "version": "11.5.2"
+    },
+    {
+      "type": "datasource",
+      "id": "influxdb",
+      "name": "InfluxDB",
+      "version": "1.0.0"
+    },
+    {
+      "type": "panel",
+      "id": "timeseries",
+      "name": "Time series",
+      "version": ""
+    }
+  ],
   "annotations": {
     "list": [
       {
@@ -18,13 +49,13 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "id": 2,
+  "id": null,
   "links": [],
   "panels": [
     {
       "datasource": {
         "type": "influxdb",
-        "uid": "deg5i5l6r17nkc"
+        "uid": "${DS_INFLUXDB}"
       },
       "fieldConfig": {
         "defaults": {
@@ -105,7 +136,11 @@
       "targets": [
         {
           "query": "from(bucket: \"metrics\")\r\n  |> range(start: -1h)\r\n  |> filter(fn: (r) => r[\"_measurement\"] == \"Availability\")\r\n  |> filter(fn: (r) => r[\"type\"] == \"Memory Swaps\")\r\n  |> yield(name: \"swaps\")",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${DS_INFLUXDB}"
+          }
         }
       ],
       "title": "Memory Swaps",
@@ -114,7 +149,7 @@
     {
       "datasource": {
         "type": "influxdb",
-        "uid": "deg5i5l6r17nkc"
+        "uid": "${DS_INFLUXDB}"
       },
       "fieldConfig": {
         "defaults": {
@@ -176,8 +211,8 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 0,
-        "y": 8
+        "x": 12,
+        "y": 0
       },
       "id": 1,
       "options": {
@@ -198,7 +233,7 @@
         {
           "datasource": {
             "type": "influxdb",
-            "uid": "deg5i5l6r17nkc"
+            "uid": "${DS_INFLUXDB}"
           },
           "query": "  from(bucket: \"metrics\")\r\n  |> range(start: -1h)\r\n  |> filter(fn: (r) => r[\"_measurement\"] == \"Availability\")\r\n  |> filter(fn: (r) => r[\"type\"] == \"DropsIn\" or r[\"type\"] == \"DropsOut\")\r\n  |> yield(name: \"Packet Drops\")",
           "refId": "A"
@@ -208,21 +243,20 @@
       "type": "timeseries"
     }
   ],
-  "preload": false,
-  "refresh": "",
+  "refresh": "5s",
   "schemaVersion": 40,
   "tags": [],
   "templating": {
     "list": []
   },
   "time": {
-    "from": "now-5m",
+    "from": "now-1m",
     "to": "now"
   },
   "timepicker": {},
   "timezone": "browser",
   "title": "Availability",
   "uid": "feg6d3x4x76yoe",
-  "version": 6,
+  "version": 7,
   "weekStart": ""
 }
