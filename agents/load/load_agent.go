@@ -60,6 +60,19 @@ func main() {
 	BytesStat.BytesSent = netStats[0].BytesSent
 	BytesStat.BytesRecv = netStats[0].BytesRecv
 	//=======================================================
+	type diskstat struct {
+		BytesWrite uint64
+		BytesRead  uint64
+	}
+	DiskStats := diskstat{}
+	diskStat, err := disk.IOCounters("sda")
+	if err != nil {
+		log.Fatalf("Error while getting disk IO Counters: %v", err)
+	}
+	DiskStats.BytesWrite = diskStat["sda"].WriteBytes
+	DiskStats.BytesRead = diskStat["sda"].ReadBytes
+
+	//=======================================================
 	for {
 		// MAIN LOOP
 		fmt.Printf("============= Scan time: %ds ==============\n", timePast)
@@ -98,12 +111,23 @@ func main() {
 
 		//============================= Storage (Disk Usage) =============================
 
-		diskStat, err := disk.Usage("/")
+		diskUtil, err := disk.Usage("/")
 		if err != nil {
 			log.Fatalf("Error while getting disk usage: %v", err)
 		}
-		// fmt.Printf("Disk Usage: %.2f%% (Total: %v GB, Used: %v GB)\n", diskStat.UsedPercent, diskStat.Total/1024/1024/1024, diskStat.Used/1024/1024/1024)
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.DiskID, ids.LoadID, "Disk Usage", diskStat.UsedPercent)
+		diskStat, err := disk.IOCounters("sda")
+		if err != nil {
+			log.Fatalf("Error while getting disk IO Counters: %v", err)
+		}
+		fmt.Printf("SDA ReadBytes: %v MB,	WriteBytes: %v MB\n", diskStat["sda"].ReadBytes, diskStat["sda"].WriteBytes)
+		kBsWrite := float64(diskStat["sda"].WriteBytes-DiskStats.BytesWrite) / 1024 / float64(scnInterval)
+		kBsRead := float64(diskStat["sda"].ReadBytes-DiskStats.BytesRead) / 1024 / float64(scnInterval)
+		DiskStats.BytesWrite = diskStat["sda"].WriteBytes
+		DiskStats.BytesRead = diskStat["sda"].ReadBytes
+		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.DiskID, ids.LoadID, "BytesWrite", kBsWrite)
+		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.DiskID, ids.LoadID, "BytesRead", kBsRead)
+		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.DiskID, ids.LoadID, "Disk Usage", diskUtil.UsedPercent)
+		fmt.Printf("Disk - Write: %v kB/s, Read: %v kB/s\n", kBsWrite, kBsRead)
 
 		//==================================================================================
 

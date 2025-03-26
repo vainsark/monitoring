@@ -9,7 +9,7 @@
 .PHONY: docker-up server-run load-run latency-run availability-run
 
 docker-up:
-	docker-compose up -d
+	cd docker && docker-compose up -d
 
 server-run:
 	go run server/server.go
