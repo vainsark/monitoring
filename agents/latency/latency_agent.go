@@ -129,7 +129,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("Failed to initialize pinger: %v", err)
 		}
-		pinger.Count = 1
+		pinger.Count = 4
 		pinger.SetPrivileged(true)
 		err = pinger.Run()
 		if err != nil {

@@ -76,7 +76,7 @@ func main() {
 	for {
 		// MAIN LOOP
 		fmt.Printf("============= Load Scan time: %ds ==============\n", timePast)
-
+		start_time := t.Now()
 		//============================= CPU Usage =============================
 
 		cpuPercent, err := cpu.Percent(0, false)
@@ -141,7 +141,10 @@ func main() {
 		}
 
 		timePast += scnInterval
-		t.Sleep(t.Duration(scnInterval) * t.Second)
+		stop_time := t.Since(start_time)
+		fmt.Printf("Total time taken: %v\n", stop_time)
+		delta_sleep := (t.Duration(scnInterval) * t.Second) - stop_time
+		t.Sleep(delta_sleep)
 
 	}
 }
