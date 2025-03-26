@@ -65,6 +65,19 @@ func measureMemoryLatency() t.Duration {
 	return avg
 }
 
+func simulSenseLatency() t.Duration {
+	// simulate reading 64bit from sensor register with I2C at 400 kHz
+	minRT := 250 * t.Microsecond
+
+	deviation := rand.NormFloat64() * 50
+	if deviation < 0 {
+		deviation = -deviation
+	}
+	devTime := t.Duration(deviation) * t.Microsecond
+
+	return minRT + devTime
+}
+
 func main() {
 	// Getting the default IP address
 	cmd := exec.Command("bash", "-c", "ip route | grep default")
@@ -129,7 +142,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("Failed to initialize pinger: %v", err)
 		}
-		pinger.Count = 4
+		pinger.Count = 1
 		pinger.SetPrivileged(true)
 		err = pinger.Run()
 		if err != nil {
@@ -142,6 +155,11 @@ func main() {
 		fmt.Printf("Ping Results: %.2f\n", AvgRtt)
 		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.NetworkID, ids.LatencyID, "NetInterLaten", AvgRtt)
 
+		//============================= Sensoric Latency =============================
+
+		senseRT := simulSenseLatency()
+		fmt.Printf("Simulated Sensoric Latency: %v\n", senseRT)
+		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.SensoricID, ids.LatencyID, "Sensor Latency", float64(senseRT)/1000)
 		//====================================================================================
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*t.Second)
