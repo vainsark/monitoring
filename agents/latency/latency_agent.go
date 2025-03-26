@@ -11,13 +11,13 @@ import (
 	t "time"
 
 	"github.com/go-ping/ping"
+	"github.com/vainsark/monitoring/agents/ids"
 	pb "github.com/vainsark/monitoring/loadmonitor_proto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
 const (
-	AgentID        = 2
 	numAccesses    = 1000000
 	arraySizeBytes = 1024 * 1024 // 1MB buffer
 )
@@ -66,18 +66,18 @@ func measureMemoryLatency() t.Duration {
 }
 
 func main() {
-
+	// Getting the default IP address
 	cmd := exec.Command("bash", "-c", "ip route | grep default")
 	output, err := cmd.Output()
 	if err != nil {
 		log.Fatalf("Error running command: %v", err)
 	}
-	// Convert the output (bytes) to a string.
-	outputStr := string(output)
-	fields := strings.Fields(outputStr)
+	fields := strings.Fields(string(output))
 	defaultIP := fields[2]
 	fmt.Println("Default IP:", defaultIP)
 
+	//=======================================================
+	// Initialize the gRPC client
 	conn, err := grpc.NewClient("localhost:50051", grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Fatalf("could not connect: %v", err)
@@ -86,23 +86,24 @@ func main() {
 
 	client := pb.NewLoadMonitorClient(conn)
 
+	//=======================================================
 	metrics := &pb.Metrics{}
 	scnInterval := 5
 	timePast := 0
-	//=======================================================
 
-	//=======================================================
 	for {
 		// MAIN LOOP
 		fmt.Printf("============= Scan time: %ds ==============\n", timePast)
 		start_time := t.Now()
-		// Memory Latency
+
+		//============================= Memory Latency =============================
+
 		latency := measureMemoryLatency()
 		fmt.Printf("Average Memory Latency: %v\n", latency)
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, 2, AgentID, "Memory Latency", float64(latency))
+		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.MemoryID, ids.LatencyID, "Memory Latency", float64(latency))
 
-		//=======================================================
-		// Storage (IOSTAT)
+		//============================= Storage (IOSTAT) =============================
+
 		cmd := exec.Command("bash", "-c", "iostat -dx sda 2 2| awk 'NR>2 {print $6, $12}'")
 		output, err := cmd.Output()
 		if err != nil {
@@ -118,11 +119,11 @@ func main() {
 		fmt.Printf("avg read wait: %.2f ms\n", r_wait)
 		fmt.Printf("avg write wait: %.2f ms\n", w_wait)
 
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, 4, AgentID, "read wait", r_wait)
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, 5, AgentID, "write wait", w_wait)
+		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.DiskID, ids.LatencyID, "read wait", r_wait)
+		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.DiskID, ids.LatencyID, "write wait", w_wait)
 
-		//=======================================================
-		// Network Statistics
+		//============================= Network Statistics =============================
+
 		// Run the pinger
 		pinger, err := ping.NewPinger(defaultIP)
 		if err != nil {
@@ -139,9 +140,9 @@ func main() {
 		stats := pinger.Statistics()
 		AvgRtt := float64(t.Duration(stats.AvgRtt).Microseconds()) / 1000
 		fmt.Printf("Ping Results: %.2f\n", AvgRtt)
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, 3, AgentID, "NetInterLaten", AvgRtt)
+		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.NetworkID, ids.LatencyID, "NetInterLaten", AvgRtt)
 
-		//=======================================================
+		//====================================================================================
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*t.Second)
 		resp, err := client.LoadData(ctx, metrics)

@@ -6,7 +6,7 @@ import (
 	"log"
 	t "time"
 
-	"github.com/vainsark/monitoring/agents/defs"
+	"github.com/vainsark/monitoring/agents/ids"
 
 	"github.com/shirou/gopsutil/net"
 	"github.com/shirou/gopsutil/v4/cpu"
@@ -17,9 +17,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-const (
-	AgentID = 1
-)
+const ()
 
 func updateOrAppendMetric(metrics []*pb.Metric, id int32, agentId int32, dataName string, data float64) []*pb.Metric {
 	for i, m := range metrics {
@@ -38,7 +36,6 @@ func updateOrAppendMetric(metrics []*pb.Metric, id int32, agentId int32, dataNam
 }
 
 func main() {
-	fmt.Print(defs.LoadID)
 	conn, err := grpc.NewClient("localhost:50051", grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Fatalf("could not connect: %v", err)
@@ -74,7 +71,7 @@ func main() {
 			log.Fatalf("Error while getting CPU usage: %v", err)
 		}
 		// fmt.Printf("CPU Usage: %.2f%%\n", cpuPercent)
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, 1, AgentID, "cpu", cpuPercent[0])
+		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.CPUID, ids.LoadID, "cpu", cpuPercent[0])
 
 		//============================= Memory Usage =============================
 
@@ -83,7 +80,7 @@ func main() {
 			log.Fatalf("Error while getting memory usage: %v", err)
 		}
 		// fmt.Printf("Memory Usage: %.2f%% (Total: %v MB, Used: %v MB)\n", vmStat.UsedPercent, vmStat.Total/1024/1024, vmStat.Used/1024/1024)
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, 2, AgentID, "memory", vmStat.UsedPercent)
+		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.MemoryID, ids.LoadID, "memory", vmStat.UsedPercent)
 
 		//============================= Network Statistics =============================
 		netStats, err := net.IOCounters(false)
@@ -93,8 +90,8 @@ func main() {
 
 		kBsOut := float64(netStats[0].BytesSent-BytesStat.BytesSent) / 1024 / float64(scnInterval)
 		kBsIn := float64(netStats[0].BytesRecv-BytesStat.BytesRecv) / 1024 / float64(scnInterval)
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, 3, AgentID, "BytesOut", kBsOut)
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, 4, AgentID, "BytesIn", kBsIn)
+		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.NetworkID, ids.LoadID, "BytesOut", kBsOut)
+		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.NetworkID, ids.LoadID, "BytesIn", kBsIn)
 		fmt.Printf("Network - Sent: %v kB/s, Received: %v kB/s\n", kBsOut, kBsIn)
 		BytesStat.BytesSent = netStats[0].BytesSent
 		BytesStat.BytesRecv = netStats[0].BytesRecv
@@ -106,7 +103,7 @@ func main() {
 			log.Fatalf("Error while getting disk usage: %v", err)
 		}
 		// fmt.Printf("Disk Usage: %.2f%% (Total: %v GB, Used: %v GB)\n", diskStat.UsedPercent, diskStat.Total/1024/1024/1024, diskStat.Used/1024/1024/1024)
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, 5, AgentID, "disk", diskStat.UsedPercent)
+		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.DiskID, ids.LoadID, "Disk Usage", diskStat.UsedPercent)
 
 		//==================================================================================
 

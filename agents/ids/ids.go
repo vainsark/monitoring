@@ -1,4 +1,4 @@
-package defs
+package ids
 
 const (
 	LoadID         = 1
