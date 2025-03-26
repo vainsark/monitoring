@@ -23,6 +23,8 @@ latency-run:
 availability-run:
 	go run agents/availability/availability_agent.go
 	
+sensor-sim-run:
+	go run sensoric_sim/TrafficSim.go 
 	
 generate_grpc_code:
 	protoc \

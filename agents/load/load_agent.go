@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
+	"strconv"
+	"strings"
 	t "time"
 
 	"github.com/vainsark/monitoring/agents/ids"
@@ -35,7 +38,23 @@ func updateOrAppendMetric(metrics []*pb.Metric, id int32, agentId int32, dataNam
 	return append(metrics, newMetric)
 }
 
+func readSensorData(filename string) (float64, float64, error) {
+
+	filePath := filename
+
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	fields := strings.Fields(string(data))
+	readCount, _ := strconv.ParseFloat(fields[1], 64)
+	writeCount, _ := strconv.ParseFloat(fields[3], 64)
+
+	return readCount, writeCount, nil
+}
 func main() {
+
 	conn, err := grpc.NewClient("localhost:50051", grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Fatalf("could not connect: %v", err)
@@ -128,8 +147,17 @@ func main() {
 		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.DiskID, ids.LoadID, "Disk Usage", diskUtil.UsedPercent)
 		fmt.Printf("Disk - Write: %v kB/s, Read: %v kB/s\n", kBsWrite, kBsRead)
 
-		//==================================================================================
+		//============================= Sensoric Load =============================
+		filename := "sensoric_sim/counters.txt"
 
+		senseRead, senseWrite, err := readSensorData(filename)
+		if err != nil {
+			log.Fatalf("Error reading sensor data: %v", err)
+		}
+		fmt.Printf("sensoric Load - Read: %.2f, Write: %.2f\n", senseRead, senseWrite)
+		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.SensoricID, ids.LoadID, "Sensoric Read", senseRead)
+		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.SensoricID, ids.LoadID, "Sensoric Write", senseWrite)
+		//==========================================================================
 		ctx, cancel := context.WithTimeout(context.Background(), 5*t.Second)
 		resp, err := client.LoadData(ctx, metrics)
 		cancel() // cancel the context after the call finishes
