@@ -71,7 +71,7 @@ func main() {
 			log.Fatalf("Error while getting CPU usage: %v", err)
 		}
 		// fmt.Printf("CPU Usage: %.2f%%\n", cpuPercent)
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.CPUID, ids.LoadID, "cpu", cpuPercent[0])
+		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.CPUID, ids.LoadID, "CPU Usage", cpuPercent[0])
 
 		//============================= Memory Usage =============================
 
@@ -80,7 +80,7 @@ func main() {
 			log.Fatalf("Error while getting memory usage: %v", err)
 		}
 		// fmt.Printf("Memory Usage: %.2f%% (Total: %v MB, Used: %v MB)\n", vmStat.UsedPercent, vmStat.Total/1024/1024, vmStat.Used/1024/1024)
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.MemoryID, ids.LoadID, "memory", vmStat.UsedPercent)
+		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.MemoryID, ids.LoadID, "Memory Usage", vmStat.UsedPercent)
 
 		//============================= Network Statistics =============================
 		netStats, err := net.IOCounters(false)
