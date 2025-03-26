@@ -93,7 +93,7 @@ func main() {
 
 	for {
 		// MAIN LOOP
-		fmt.Printf("============= Scan time: %ds ==============\n", timePast)
+		fmt.Printf("============= Latency Scan time: %ds ==============\n", timePast)
 		start_time := t.Now()
 
 		//============================= Memory Latency =============================

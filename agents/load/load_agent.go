@@ -75,7 +75,7 @@ func main() {
 	//=======================================================
 	for {
 		// MAIN LOOP
-		fmt.Printf("============= Scan time: %ds ==============\n", timePast)
+		fmt.Printf("============= Load Scan time: %ds ==============\n", timePast)
 
 		//============================= CPU Usage =============================
 
@@ -119,7 +119,6 @@ func main() {
 		if err != nil {
 			log.Fatalf("Error while getting disk IO Counters: %v", err)
 		}
-		fmt.Printf("SDA ReadBytes: %v MB,	WriteBytes: %v MB\n", diskStat["sda"].ReadBytes, diskStat["sda"].WriteBytes)
 		kBsWrite := float64(diskStat["sda"].WriteBytes-DiskStats.BytesWrite) / 1024 / float64(scnInterval)
 		kBsRead := float64(diskStat["sda"].ReadBytes-DiskStats.BytesRead) / 1024 / float64(scnInterval)
 		DiskStats.BytesWrite = diskStat["sda"].WriteBytes
