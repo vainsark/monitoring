@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os/exec"
+	"strconv"
+	"strings"
 	t "time"
 
 	"github.com/shirou/gopsutil/net"
@@ -63,6 +66,18 @@ func main() {
 
 	for {
 		fmt.Printf("============= Availability Scan time: %ds ==============\n", timePast)
+		start_time := t.Now()
+		//============================= CPU Idle Time Percent =============================
+		cmd := exec.Command("bash", "-c", "iostat -c 2 1 ")
+		output, err := cmd.Output()
+		if err != nil {
+			log.Fatalf("Error running iostat command: %v", err)
+		}
+		outputStr := string(output)
+		fields := strings.Fields(outputStr)
+		idle_percent, _ := strconv.ParseFloat(fields[19], 64)
+		// fmt.Println(idle_percent)
+		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.CPUID, ids.LatencyID, "Idle Percent", idle_percent)
 
 		//============================= Memory Swaps =============================
 
@@ -101,7 +116,10 @@ func main() {
 		}
 
 		timePast += scnInterval
-		t.Sleep(t.Duration(scnInterval) * t.Second)
+		stop_time := t.Since(start_time)
+		fmt.Printf("Total time taken: %v\n", stop_time)
+		delta_sleep := (t.Duration(scnInterval) * t.Second) - stop_time
+		t.Sleep(delta_sleep)
 
 	}
 }
