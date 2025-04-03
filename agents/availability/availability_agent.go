@@ -76,8 +76,8 @@ func main() {
 		outputStr := string(output)
 		fields := strings.Fields(outputStr)
 		idle_percent, _ := strconv.ParseFloat(fields[19], 64)
-		// fmt.Println(idle_percent)
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.CPUID, ids.LatencyID, "Idle Percent", idle_percent)
+		fmt.Printf("CPU Idle time percent: %v%% \n", idle_percent)
+		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.CPUID, ids.AvailabilityID, "Idle Percent", idle_percent)
 
 		//============================= Memory Swaps =============================
 
@@ -85,9 +85,9 @@ func main() {
 		if err != nil {
 			log.Fatalf("Error while getting memory swaps: %v", err)
 		}
-		// fmt.Printf("Swap Usage: %.2f%% (Total: %v MB, Used: %v MB)\n", swapStat.UsedPercent, swapStat.Total/1024/1024, swapStat.Used/1024/1024)
+		fmt.Printf("Swap Usage: %.2f%% (Total: %v MB, Used: %v MB)\n", swapStat.UsedPercent, swapStat.Total/1024/1024, swapStat.Used/1024/1024)
 		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.MemoryID, ids.AvailabilityID, "Memory Swaps", swapStat.UsedPercent)
-
+		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.MemoryID, ids.AvailabilityID, "Memory Swaps MB", float64(swapStat.Used/1024/1024))
 		//============================= Network Statistics =============================
 
 		netStats, err := net.IOCounters(false)
