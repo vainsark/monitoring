@@ -6,7 +6,7 @@
 
 # go run agents/latency/latency_agent.go
 
-.PHONY: docker-up server-run load-run latency-run availability-run
+.PHONY: docker-up server-run load-run latency-run availability-run stress_cpu stress_disk stress_mem stress_mem_lat
 
 docker-up:
 	cd docker && docker-compose up -d
@@ -35,3 +35,11 @@ generate_grpc_code:
 		loadmonitor.proto
 
 
+stress_cpu:
+	stress --cpu 1 --timeout 30s
+stress_mem:
+	stress --vm 1 --vm-bytes 512M --timeout 30s
+stress_mem_lat:
+	stress --vm 20 --vm-bytes 32M --timeout 30s
+stress_disk:
+	stress --hdd 2 --timeout 30s
