@@ -9,31 +9,41 @@ import (
 	"strings"
 	t "time"
 
-	"github.com/vainsark/monitoring/agents/ids"
-
 	"github.com/shirou/gopsutil/net"
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/disk"
 	"github.com/shirou/gopsutil/v4/mem"
+	"github.com/vainsark/monitoring/agents/ids"
 	pb "github.com/vainsark/monitoring/loadmonitor_proto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 const ()
 
+var (
+	scnInterval      = 5
+	TransmitInterval = 1
+	MetricBuff       = 0
+)
+
 func updateOrAppendMetric(metrics []*pb.Metric, id int32, agentId int32, dataName string, data float64) []*pb.Metric {
-	for i, m := range metrics {
-		if m.DataName == dataName {
-			metrics[i].Data = data
-			return metrics
+	if MetricBuff == 0 {
+		for i, m := range metrics {
+			if m.DataName == dataName {
+				metrics[i].Data = data
+				metrics[i].Timestamp = timestamppb.New(t.Now())
+				return metrics
+			}
 		}
 	}
 	newMetric := &pb.Metric{
-		Id:       id,
-		AgentId:  agentId,
-		DataName: dataName,
-		Data:     data,
+		Id:        id,
+		AgentId:   agentId,
+		DataName:  dataName,
+		Data:      data,
+		Timestamp: timestamppb.New(t.Now()),
 	}
 	return append(metrics, newMetric)
 }
@@ -64,7 +74,9 @@ func main() {
 	client := pb.NewLoadMonitorClient(conn)
 
 	metrics := &pb.Metrics{}
-	scnInterval := 5
+	// scnInterval := 5
+	// TransmitInterval := 1
+	// MetricBuff := 0
 	timePast := 0
 	//=======================================================
 	type bytesstat struct {
@@ -157,15 +169,26 @@ func main() {
 		fmt.Printf("sensoric Load - Read: %.2f, Write: %.2f\n", senseRead, senseWrite)
 		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.SensoricID, ids.LoadID, "Sensoric Read", senseRead)
 		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.SensoricID, ids.LoadID, "Sensoric Write", senseWrite)
-		//==========================================================================
-		ctx, cancel := context.WithTimeout(context.Background(), 5*t.Second)
-		resp, err := client.LoadData(ctx, metrics)
-		cancel() // cancel the context after the call finishes
 
-		if err != nil {
-			log.Printf("Error while calling LoadData: %v", err)
-		} else {
-			log.Printf("Response from server: %v", resp)
+		//==========================================================================
+		if timePast == 0 || (timePast%(scnInterval*TransmitInterval) == 0) {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*t.Second)
+			resp, err := client.LoadData(ctx, metrics)
+			cancel() // cancel the context after the call finishes
+			if err != nil {
+				log.Printf("Error while calling LoadData: %v", err)
+			} else {
+				log.Printf("Response from server: %v", resp)
+
+				scnInterval = int(resp.ScnFreq)
+				TransmitInterval = int(resp.TransMult)
+				if TransmitInterval > 1 {
+					MetricBuff = 1
+					metrics = &pb.Metrics{}
+				} else {
+					MetricBuff = 0
+				}
+			}
 		}
 
 		timePast += scnInterval

@@ -4,6 +4,8 @@ import (
 	"context"
 	"log"
 	"net"
+	"os"
+	"strconv"
 	t "time"
 
 	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
@@ -13,11 +15,13 @@ import (
 
 var (
 	// InfluxDB client configuration
-	influxURL = "http://localhost:8086"
-	// influxToken = "dvKsoUSbn-7vW04bNFdZeL87TNissgRP43i_ttrg-Vx3LdkzKJHucylmomEasS9an7lGv_TyZRj6-dHINMjXVA=="
-	influxToken  = "Ib2fq58MyBy2OUR9Aa3Lv2BN1uNBYnwMTsx4pyOSDzqoLZF6qKMTnfsB7hRO0_aFwxEOUPtbt3NUmyvs8RyhCw==" // Laptop
-	influxOrg    = "vainsark"
-	influxBucket = "metrics"
+	influxURL   = "http://localhost:8086"
+	influxToken = "dvKsoUSbn-7vW04bNFdZeL87TNissgRP43i_ttrg-Vx3LdkzKJHucylmomEasS9an7lGv_TyZRj6-dHINMjXVA=="
+	// influxToken  = "Ib2fq58MyBy2OUR9Aa3Lv2BN1uNBYnwMTsx4pyOSDzqoLZF6qKMTnfsB7hRO0_aFwxEOUPtbt3NUmyvs8RyhCw==" // Laptop
+	influxOrg          = "vainsark"
+	influxBucket       = "metrics"
+	scan         int32 = 5 // Default scan interval in seconds
+	transmit     int32 = 1 // Default transmit interval multiplier
 )
 
 type server struct {
@@ -44,12 +48,19 @@ func (s *server) LoadData(ctx context.Context, in *pb.Metrics) (*pb.MetricsAck, 
 		default:
 			agentName = "Misc"
 		}
+
+		// Use the metric's timestamp. If not provided, use the current time.
+		pointTime := t.Now()
+		if metric.Timestamp != nil {
+			pointTime = metric.Timestamp.AsTime()
+		}
+
 		// Create an entry the agent name and a field for its value.
 		entry := influxdb2.NewPoint(
 			agentName,
 			map[string]string{"type": metric.DataName},
 			map[string]interface{}{"value": metric.Data},
-			t.Now(),
+			pointTime,
 		)
 
 		// Write the point to InfluxDB
@@ -71,10 +82,19 @@ func (s *server) LoadData(ctx context.Context, in *pb.Metrics) (*pb.MetricsAck, 
 	}
 	log.Println("=======================================")
 
-	return &pb.MetricsAck{Ack: 1}, nil
+	return &pb.MetricsAck{Ack: 1, ScnFreq: scan, TransMult: transmit}, nil
 }
 
 func main() {
+	// Check if there are arguments for scan and transmit intervals and get them.
+	if len(os.Args) >= 3 {
+		scanArg, _ := strconv.Atoi(os.Args[1])
+		transmitArg, _ := strconv.Atoi(os.Args[2])
+		scan = int32(scanArg)
+		transmit = int32(transmitArg)
+	}
+	log.Printf("Scan frequency: %d seconds", scan)
+	log.Printf("Transmit multiplier: %d", transmit)
 
 	// Initialize the InfluxDB client.
 	client := influxdb2.NewClient(influxURL, influxToken)

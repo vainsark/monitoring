@@ -12,7 +12,7 @@ docker-up:
 	cd docker && docker-compose up -d
 
 server-run:
-	go run server/server.go
+	go run server/server.go $(ARGS)
 
 load-run:
 	go run agents/load/load_agent.go

@@ -4,6 +4,8 @@ option go_package = "github.com/vainsark/monitoring/loadmonitor_proto";
 
 package loadmonitor;
 
+import "google/protobuf/timestamp.proto"; 
+
 service LoadMonitor {
     rpc LoadData (Metrics) returns (MetricsAck);
 }
@@ -13,6 +15,7 @@ message Metric {
     int32 agentId = 2;
     string DataName = 3;
     double Data = 4;
+    google.protobuf.Timestamp Timestamp = 5;
 }
 
 message Metrics {
@@ -21,4 +24,6 @@ message Metrics {
 
 message MetricsAck {
     int32 Ack = 1;
+    int32 ScnFreq = 2;
+    int32 TransMult = 3;
 }
