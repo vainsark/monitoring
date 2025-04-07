@@ -187,6 +187,7 @@ func main() {
 					metrics = &pb.Metrics{}
 				} else {
 					MetricBuff = 0
+					metrics = &pb.Metrics{}
 				}
 			}
 		}
