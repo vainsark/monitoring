@@ -173,6 +173,14 @@ func main() {
 		senseRT := simulSenseLatency()
 		fmt.Printf("Simulated Sensoric Latency: %v\n", senseRT)
 		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.SensoricID, ids.LatencyID, "Sensor Latency", float64(senseRT)/1000)
+
+		//==========================================================================
+		// Print the metrics buffer length and trim if necessary
+		fmt.Printf("metrics length: %v\n", len(metrics.Metrics))
+		if len(metrics.Metrics) > MetricsLen*MaxMetricBuff {
+			fmt.Printf("Trimming oldest metrics...\n")
+			metrics.Metrics = metrics.Metrics[MetricsLen:] // Trim the oldest metrics
+		}
 		//================================= Sending Data =================================
 		if timetosend() {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*t.Second)

@@ -49,10 +49,10 @@ func (s *server) LoadData(ctx context.Context, in *pb.Metrics) (*pb.MetricsAck, 
 			agentName = "Misc"
 		}
 
-		// Use the metric's timestamp. If not provided, use the current time.
+		// Use the metric's timestamp and adjust for time zone. If not provided, use the current time.
 		pointTime := t.Now()
 		if metric.Timestamp != nil {
-			pointTime = metric.Timestamp.AsTime()
+			pointTime = metric.Timestamp.AsTime().Local()
 		}
 
 		// Create an entry the agent name and a field for its value.
@@ -69,6 +69,7 @@ func (s *server) LoadData(ctx context.Context, in *pb.Metrics) (*pb.MetricsAck, 
 		}
 
 		// Log the metric for debugging purposes
+		// log.Printf("%s (%s): %.2f	(time: %s)", metric.DataName, agentName, metric.Data, metric.Timestamp.AsTime().Local().Format("2006-01-02 15:04:05"))
 		log.Printf("%s (%s): %.2f", metric.DataName, agentName, metric.Data)
 
 	}

@@ -114,6 +114,13 @@ func main() {
 		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.NetworkID, ids.AvailabilityID, "DropsOut", float64(deltaout))
 		fmt.Printf("Dropped In: %v Packets, Dropped Out: %v Packets\n", deltain, deltaout)
 
+		//==========================================================================
+		// Print the metrics buffer length and trim if necessary
+		fmt.Printf("metrics length: %v\n", len(metrics.Metrics))
+		if len(metrics.Metrics) > MetricsLen*MaxMetricBuff {
+			fmt.Printf("Trimming oldest metrics...\n")
+			metrics.Metrics = metrics.Metrics[MetricsLen:] // Trim the oldest metrics
+		}
 		//================================= Sending Data =================================
 		if timetosend() {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*t.Second)
