@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	pb "github.com/vainsark/monitoring/loadmonitor_proto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 const (
@@ -22,18 +24,24 @@ const (
 	arraySizeBytes = 1024 * 1024 // 1MB buffer
 )
 
+var (
+	scnInterval      = 5
+	TransmitInterval = 1
+	MaxMetricBuff    = 10
+	timePast         = 0
+	sendDelta        = 0
+	MetricsLen       = 9
+	ServerIP         = "localhost"
+)
+
 func updateOrAppendMetric(metrics []*pb.Metric, id int32, agentId int32, dataName string, data float64) []*pb.Metric {
-	for i, m := range metrics {
-		if m.DataName == dataName {
-			metrics[i].Data = data
-			return metrics
-		}
-	}
+	// Append a new metric to the metrics slice
 	newMetric := &pb.Metric{
-		Id:       id,
-		AgentId:  agentId,
-		DataName: dataName,
-		Data:     data,
+		Id:        id,
+		AgentId:   agentId,
+		DataName:  dataName,
+		Data:      data,
+		Timestamp: timestamppb.New(t.Now()),
 	}
 	return append(metrics, newMetric)
 }
@@ -77,7 +85,9 @@ func simulSenseLatency() t.Duration {
 
 	return minRT + devTime
 }
-
+func timetosend() bool {
+	return timePast == 0 || ((timePast-sendDelta)%(scnInterval*TransmitInterval) == 0)
+}
 func main() {
 	// Getting the default IP address
 	cmd := exec.Command("bash", "-c", "ip route | grep default")
@@ -90,8 +100,13 @@ func main() {
 	fmt.Println("Default IP:", defaultIP)
 
 	//=======================================================
+
+	if len(os.Args) > 1 {
+		ServerIP = os.Args[1]
+	}
+	log.Printf("Server IP: %s\n", ServerIP)
 	// Initialize the gRPC client
-	conn, err := grpc.NewClient("localhost:50051", grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(ServerIP+":50051", grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Fatalf("could not connect: %v", err)
 	}
@@ -101,8 +116,6 @@ func main() {
 
 	//=======================================================
 	metrics := &pb.Metrics{}
-	scnInterval := 5
-	timePast := 0
 
 	for {
 		// MAIN LOOP
@@ -160,20 +173,29 @@ func main() {
 		senseRT := simulSenseLatency()
 		fmt.Printf("Simulated Sensoric Latency: %v\n", senseRT)
 		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.SensoricID, ids.LatencyID, "Sensor Latency", float64(senseRT)/1000)
-		//====================================================================================
+		//================================= Sending Data =================================
+		if timetosend() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*t.Second)
+			resp, err := client.LoadData(ctx, metrics)
+			cancel() // cancel the context after the call finishes
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*t.Second)
-		resp, err := client.LoadData(ctx, metrics)
-		cancel()
+			if err != nil {
+				log.Printf("Error while calling LoadData: %v", err)
+			} else {
+				log.Printf("Response from server: %v", resp)
 
-		if err != nil {
-			log.Printf("Error while calling LoadData: %v", err)
-		} else {
-			log.Printf("Response from server: %v", resp)
+				TransmitInterval = int(resp.TransMult) // Update transmit multiplier
+				newScnInterval := int(resp.ScnFreq)
+				if scnInterval != newScnInterval {
+					scnInterval = newScnInterval       // Update scan interval
+					sendDelta = timePast % scnInterval // Update send delta for correct sending timing
+				}
+				metrics = &pb.Metrics{} // Reset metrics after sending
+			}
 		}
 
-		// Compensate for lost time for correct 5s of sleep.
 		timePast += scnInterval
+		// Compensate for the time taken to process the metrics
 		stop_time := t.Since(start_time)
 		fmt.Printf("Total time taken: %v\n", stop_time)
 		delta_sleep := (t.Duration(scnInterval) * t.Second) - stop_time

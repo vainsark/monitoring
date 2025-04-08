@@ -15,13 +15,13 @@ server-run:
 	go run server/server.go $(ARGS)
 
 load-run:
-	go run agents/load/load_agent.go
+	go run agents/load/load_agent.go $(ARGS)
 
 latency-run:
-	sudo /usr/local/go/bin/go run agents/latency/latency_agent.go
+	sudo /usr/local/go/bin/go run agents/latency/latency_agent.go $(ARGS)
 
 availability-run:
-	go run agents/availability/availability_agent.go
+	go run agents/availability/availability_agent.go $(ARGS)
 	
 sensor-sim-run:
 	go run sensoric_sim/TrafficSim.go 

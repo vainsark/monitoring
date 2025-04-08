@@ -69,16 +69,8 @@ func (s *server) LoadData(ctx context.Context, in *pb.Metrics) (*pb.MetricsAck, 
 		}
 
 		// Log the metric for debugging purposes
-		switch metric.DataName {
-		case "cpu":
-			log.Printf("CPU load: %.2f%%", metric.Data)
-		case "memory":
-			log.Printf("Memory utilization: %.2f%%", metric.Data)
-		case "disk":
-			log.Printf("Disk usage: %.2f%%", metric.Data)
-		default:
-			log.Printf("%s (%s): %.2f", metric.DataName, agentName, metric.Data)
-		}
+		log.Printf("%s (%s): %.2f", metric.DataName, agentName, metric.Data)
+
 	}
 	log.Println("=======================================")
 
@@ -99,8 +91,8 @@ func main() {
 	// Initialize the InfluxDB client.
 	client := influxdb2.NewClient(influxURL, influxToken)
 	defer client.Close()
-	// Create a new server instance with InfluxDB references.
 
+	// Create a new server instance with InfluxDB references.
 	s := &server{
 		influxClient: client,
 		org:          influxOrg,
