@@ -28,6 +28,7 @@ var (
 	sendDelta        = 0
 	MetricsLen       = 9
 	ServerIP         = "localhost"
+	DiskName         = ids.StorageLinuxID
 )
 
 type diskstat struct {
@@ -97,13 +98,13 @@ func main() {
 	}
 	//=======================================================
 	// Get the initial disk IO counters
-	diskCounts, err := disk.IOCounters("sda")
+	diskCounts, err := disk.IOCounters(DiskName)
 	if err != nil {
 		log.Fatalf("Error while getting disk IO Counters: %v", err)
 	}
 	DiskStats := diskstat{
-		BytesWrite: diskCounts["sda"].WriteBytes,
-		BytesRead:  diskCounts["sda"].ReadBytes,
+		BytesWrite: diskCounts[DiskName].WriteBytes,
+		BytesRead:  diskCounts[DiskName].ReadBytes,
 	}
 	//=======================================================
 	for {
@@ -142,14 +143,14 @@ func main() {
 		if err != nil {
 			log.Fatalf("Error while getting disk usage: %v", err)
 		}
-		diskCounts, err := disk.IOCounters("sda")
+		diskCounts, err := disk.IOCounters(DiskName)
 		if err != nil {
 			log.Fatalf("Error while getting disk IO Counters: %v", err)
 		}
-		kBsWrite := float64(diskCounts["sda"].WriteBytes-DiskStats.BytesWrite) / 1024 / float64(scnInterval)
-		kBsRead := float64(diskCounts["sda"].ReadBytes-DiskStats.BytesRead) / 1024 / float64(scnInterval)
-		DiskStats.BytesWrite = diskCounts["sda"].WriteBytes
-		DiskStats.BytesRead = diskCounts["sda"].ReadBytes
+		kBsWrite := float64(diskCounts[DiskName].WriteBytes-DiskStats.BytesWrite) / 1024 / float64(scnInterval)
+		kBsRead := float64(diskCounts[DiskName].ReadBytes-DiskStats.BytesRead) / 1024 / float64(scnInterval)
+		DiskStats.BytesWrite = diskCounts[DiskName].WriteBytes
+		DiskStats.BytesRead = diskCounts[DiskName].ReadBytes
 		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.DiskID, ids.LoadID, "BytesWrite", kBsWrite)
 		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.DiskID, ids.LoadID, "BytesRead", kBsRead)
 		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.DiskID, ids.LoadID, "Disk Usage", diskUtil.UsedPercent)

@@ -32,6 +32,7 @@ var (
 	sendDelta        = 0
 	MetricsLen       = 9
 	ServerIP         = "localhost"
+	DiskName         = ids.StorageLinuxID
 )
 
 func updateOrAppendMetric(metrics []*pb.Metric, id int32, agentId int32, dataName string, data float64) []*pb.Metric {
@@ -130,7 +131,7 @@ func main() {
 
 		//============================= Storage (IOSTAT) =============================
 
-		cmd := exec.Command("bash", "-c", "iostat -dx sda 2 2| awk 'NR>2 {print $6, $12}'")
+		cmd := exec.Command("bash", "-c", "iostat -dx ", DiskName, "2 2| awk 'NR>2 {print $6, $12}'")
 		output, err := cmd.Output()
 		if err != nil {
 			log.Fatalf("Error running iostat command: %v", err)
