@@ -21,7 +21,7 @@ import (
 )
 
 var (
-	scnInterval      = 5
+	scnInterval      = 500
 	TransmitInterval = 1
 	MaxMetricBuff    = 10
 	timePast         = 0
@@ -74,7 +74,7 @@ func main() {
 	}
 	log.Printf("Server IP: %s\n", ServerIP)
 
-	// Initialize the gRPC client
+	// Initialize the gRPC connection
 	conn, err := grpc.NewClient(ServerIP+":50051", grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Fatalf("could not connect: %v", err)
@@ -199,7 +199,7 @@ func main() {
 		// Compensate for the time taken to process the metrics
 		stop_time := t.Since(start_time)
 		fmt.Printf("Total time taken: %v\n", stop_time)
-		delta_sleep := (t.Duration(scnInterval) * t.Second) - stop_time
+		delta_sleep := (t.Duration(scnInterval) * t.Millisecond) - stop_time
 		t.Sleep(delta_sleep)
 
 	}
