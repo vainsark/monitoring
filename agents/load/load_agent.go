@@ -21,7 +21,7 @@ import (
 )
 
 var (
-	scnInterval      = 500
+	scnInterval      = 400
 	TransmitInterval = 1
 	MaxMetricBuff    = 10
 	timePast         = 0
