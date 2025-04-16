@@ -121,7 +121,29 @@ func main() {
 	}
 	defer conn.Close()
 	client := pb.NewLoadMonitorClient(conn)
+	// Channel for sending metrics to the worker
+	sendChan := make(chan *pb.Metrics, 10) // Buffered channel for metrics
 
+	// Worker goroutine for sending data
+	go func() {
+		for metrics := range sendChan {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*t.Second)
+			resp, err := client.LoadData(ctx, metrics)
+			cancel()
+			if err != nil {
+				log.Printf("Error while calling LoadData: %v", err)
+				continue
+			}
+
+			// Update intervals based on server response
+			TransmitInterval = int(resp.TransMult)
+			newScnInterval := int(resp.ScnFreq)
+			if scnInterval != newScnInterval {
+				scnInterval = newScnInterval
+				sendDelta = timePast % scnInterval
+			}
+		}
+	}()
 	metrics := &pb.Metrics{}
 
 	for {
@@ -239,21 +261,26 @@ func main() {
 			metrics.Metrics = metrics.Metrics[MetricsLen:]
 		}
 
+		// if timetosend() {
+		// 	ctx, cancel := context.WithTimeout(context.Background(), 5*t.Second)
+		// 	resp, err := client.LoadData(ctx, metrics)
+		// 	cancel()
+		// 	if err != nil {
+		// 		log.Printf("Error while calling LoadData: %v", err)
+		// 	} else {
+		// 		TransmitInterval = int(resp.TransMult)
+		// 		newScnInterval := int(resp.ScnFreq)
+		// 		if scnInterval != newScnInterval {
+		// 			scnInterval = newScnInterval
+		// 			sendDelta = timePast % scnInterval
+		// 		}
+		// 		metrics = &pb.Metrics{}
+		// 	}
+		// }
+
 		if timetosend() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*t.Second)
-			resp, err := client.LoadData(ctx, metrics)
-			cancel()
-			if err != nil {
-				log.Printf("Error while calling LoadData: %v", err)
-			} else {
-				TransmitInterval = int(resp.TransMult)
-				newScnInterval := int(resp.ScnFreq)
-				if scnInterval != newScnInterval {
-					scnInterval = newScnInterval
-					sendDelta = timePast % scnInterval
-				}
-				metrics = &pb.Metrics{}
-			}
+			sendChan <- metrics     // Send metrics to the worker
+			metrics = &pb.Metrics{} // Reset metrics after sending
 		}
 
 		timePast += scnInterval
