@@ -25,7 +25,7 @@ const (
 )
 
 var (
-	scnInterval      = 5
+	scnInterval      = 2000
 	TransmitInterval = 1
 	MaxMetricBuff    = 10
 	timePast         = 0
@@ -206,10 +206,9 @@ func main() {
 		}
 
 		timePast += scnInterval
-		// Compensate for the time taken to process the metrics
 		stop_time := t.Since(start_time)
 		fmt.Printf("Total time taken: %v\n", stop_time)
-		delta_sleep := (t.Duration(scnInterval) * t.Second) - stop_time
+		delta_sleep := (t.Duration(scnInterval) * t.Millisecond) - stop_time
 		t.Sleep(delta_sleep)
 
 	}

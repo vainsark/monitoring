@@ -21,7 +21,7 @@ import (
 )
 
 var (
-	scnInterval      = 5
+	scnInterval      = 2000
 	TransmitInterval = 1
 	MaxMetricBuff    = 10
 	timePast         = 0
@@ -43,6 +43,14 @@ type memstats struct {
 	swapsMB float64
 }
 
+func prtMetrics(metrics *pb.Metrics) {
+	fmt.Printf("DeviceId: %s\n", metrics.DeviceId)
+	fmt.Printf("AgentId: %d\n", metrics.AgentId)
+	for _, metric := range metrics.Metrics {
+		fmt.Printf("  %s: ", metric.DataName)
+		fmt.Printf("  Data: %.2f\n", metric.Data)
+	}
+}
 func updateOrAppendMetric(metrics []*pb.Metric, dataName string, data float64) []*pb.Metric {
 	// Append a new metric to the metrics slice
 	newMetric := &pb.Metric{
@@ -87,11 +95,12 @@ func main() {
 	//=======================================================
 
 	for {
-
+		intervalSec := float64(scnInterval) / 1000
 		fmt.Printf("============= Availability Scan time: %ds ==============\n", timePast)
 		start_time := t.Now()
+
 		var wg sync.WaitGroup
-		wg.Add(5)
+		wg.Add(3)
 
 		cpuChan := make(chan float64, 1)
 		memChan := make(chan memstats, 1)
@@ -101,17 +110,16 @@ func main() {
 		//============================= CPU Idle Time Percent =============================
 		go func() {
 			defer wg.Done()
-			cmd := exec.Command("bash", "-c", "iostat -c 2 1 ")
+			cmd := exec.Command("bash", "-c", "iostat -c 1 2 ")
 			output, err := cmd.Output()
 			if err != nil {
-				log.Fatalf("Error running iostat command: %v", err)
+				log.Printf("Error running iostat command: %v", err)
 				cpuChan <- 0
 				return
 			}
 			// outputStr := string(output)
 			fields := strings.Fields(string(output))
 			idle_percent, _ := strconv.ParseFloat(fields[19], 64)
-			fmt.Printf("CPU Idle time percent: %v%% \n", idle_percent)
 			cpuChan <- idle_percent
 		}()
 
@@ -120,12 +128,10 @@ func main() {
 			defer wg.Done()
 			swapStat, err := mem.SwapMemory()
 			if err != nil {
-				log.Fatalf("Error while getting memory swaps: %v", err)
+				log.Printf("Error while getting memory swaps: %v", err)
 				memChan <- memstats{}
 				return
 			}
-			fmt.Printf("Swap Usage: %.2f%% (Total: %v MB, Used: %v MB)\n", swapStat.UsedPercent, swapStat.Total/1024/1024, swapStat.Used/1024/1024)
-
 			memChan <- memstats{
 				swaps:   swapStat.UsedPercent,
 				swapsMB: float64(swapStat.Used / 1024 / 1024),
@@ -137,22 +143,23 @@ func main() {
 			defer wg.Done()
 			netStats, err := net.IOCounters(false)
 			if err != nil {
-				log.Fatalf("Error while getting network IO counters: %v", err)
+				log.Printf("Error while getting network IO counters: %v", err)
 				netChan <- dropstats{}
 				return
 			}
 			newIn := float64(netStats[0].Dropin)
 			newOut := float64(netStats[0].Dropout)
-			deltain := newIn - prev.newdropins/float64(scnInterval)
-			deltaout := newOut - prev.newdropouts/float64(scnInterval)
-
+			deltaInTotal := newIn - prev.newdropins
+			deltaOutTotal := newOut - prev.newdropouts
+			deltain := deltaInTotal / intervalSec
+			deltaout := deltaOutTotal / intervalSec
 			netChan <- dropstats{
 				dropins:     deltain,
 				dropouts:    deltaout,
 				newdropins:  newIn,
 				newdropouts: newOut,
 			}
-			fmt.Printf("Dropped In: %v Packets, Dropped Out: %v Packets\n", deltain, deltaout)
+			// fmt.Printf("Dropped In: %v Packets, Dropped Out: %v Packets\n", deltain, deltaout)
 
 		}(prevDropStats)
 
@@ -160,7 +167,6 @@ func main() {
 
 		idle_percent := <-cpuChan
 		swapStat := <-memChan
-
 		deltadrops := <-netChan
 
 		//==========================================================================
@@ -180,32 +186,40 @@ func main() {
 			metrics.Metrics = metrics.Metrics[MetricsLen:] // Trim the oldest metrics
 		}
 		//================================= Sending Data =================================
+		prtMetrics(metrics)
 		if timetosend() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*t.Second)
-			resp, err := client.LoadData(ctx, metrics)
-			cancel() // cancel the context after the call finishes
+			// Save current batch in a local variable.
+			m := metrics
 
-			if err != nil {
-				log.Printf("Error while calling LoadData: %v", err)
-			} else {
-				log.Printf("Response from server: %v", resp)
-
-				TransmitInterval = int(resp.TransMult) // Update transmit multiplier
-				newScnInterval := int(resp.ScnFreq)
-				if scnInterval != newScnInterval {
-					scnInterval = newScnInterval       // Update scan interval
-					sendDelta = timePast % scnInterval // Update send delta for correct sending timing
+			go func(m *pb.Metrics) {
+				start := t.Now()
+				ctx, cancel := context.WithTimeout(context.Background(), 5*t.Second)
+				resp, err := client.LoadData(ctx, m)
+				cancel()
+				if err != nil {
+					log.Printf("Error while asynchronously sending data: %v", err)
+				} else {
+					log.Printf("Asynchronous response: %v", resp)
+					TransmitInterval = int(resp.TransMult)
+					newScnInterval := int(resp.ScnFreq)
+					if scnInterval != newScnInterval {
+						scnInterval = newScnInterval
+						sendDelta = timePast % scnInterval
+					}
 				}
-				metrics = &pb.Metrics{} // Reset metrics after sending
-			}
+				stop_time := t.Since(start)
+				fmt.Printf("Asynchronous sending time: %v\n", stop_time)
+			}(m)
+			// Prepare a new batch.
+
+			metrics = &pb.Metrics{DeviceId: devID, AgentId: agentId}
+
 		}
 
 		timePast += scnInterval
-		// Compensate for the time taken to process the metrics
 		stop_time := t.Since(start_time)
 		fmt.Printf("Total time taken: %v\n", stop_time)
-		delta_sleep := (t.Duration(scnInterval) * t.Second) - stop_time
+		delta_sleep := (t.Duration(scnInterval) * t.Millisecond) - stop_time
 		t.Sleep(delta_sleep)
-
 	}
 }

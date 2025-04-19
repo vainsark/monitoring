@@ -108,6 +108,8 @@ func main() {
 	}
 	//=======================================================
 	for {
+		intervalSec := float64(scnInterval) / 1000
+
 		// MAIN LOOP
 		fmt.Printf("============= Load Scan time: %ds ==============\n", timePast)
 		start_time := t.Now()
