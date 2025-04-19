@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	t "time"
 
 	"github.com/shirou/gopsutil/net"
@@ -21,186 +22,264 @@ import (
 )
 
 var (
-	scnInterval      = 400
+	scnInterval      = 1000
 	TransmitInterval = 1
-	MaxMetricBuff    = 10
+	MaxMetricBuff    = 20
 	timePast         = 0
 	sendDelta        = 0
 	MetricsLen       = 9
 	ServerIP         = "localhost"
 	DiskName         = ids.StorageLinuxID
+	devID            = string(ids.DeviceId)
+	agentId          = ids.LoadID
 )
 
-type diskstat struct {
-	BytesWrite uint64
-	BytesRead  uint64
-}
 type bytesstat struct {
 	BytesSent uint64
 	BytesRecv uint64
 }
 
-func updateOrAppendMetric(metrics []*pb.Metric, id int32, agentId int32, dataName string, data float64) []*pb.Metric {
-	// Append a new metric to the metrics slice
+type diskstat struct {
+	BytesWrite uint64
+	BytesRead  uint64
+}
+
+type NetResult struct {
+	kBsOut  float64
+	kBsIn   float64
+	newSent uint64
+	newRecv uint64
+}
+
+type DiskResult struct {
+	kBsWrite  float64
+	kBsRead   float64
+	diskUsage float64
+	newWrite  uint64
+	newRead   uint64
+}
+
+type SensorResult struct {
+	senseRead  float64
+	senseWrite float64
+}
+
+var BytesStat bytesstat
+var DiskStats diskstat
+
+func updateOrAppendMetric(metrics []*pb.Metric, dataName string, data float64) []*pb.Metric {
 	newMetric := &pb.Metric{
-		Id:        id,
-		AgentId:   agentId,
 		DataName:  dataName,
 		Data:      data,
 		Timestamp: timestamppb.New(t.Now()),
 	}
 	return append(metrics, newMetric)
 }
-func readSensorData(filename string) (float64, float64, error) {
 
-	filePath := filename
-	data, err := os.ReadFile(filePath)
+func prtMetrics(metrics *pb.Metrics) {
+	fmt.Printf("DeviceId: %s\n", metrics.DeviceId)
+	fmt.Printf("AgentId: %d\n", metrics.AgentId)
+	for _, metric := range metrics.Metrics {
+		fmt.Printf("  %s: ", metric.DataName)
+		fmt.Printf("  Data: %.2f\n", metric.Data)
+	}
+}
+func readSensorData(filename string) (float64, float64, error) {
+	data, err := os.ReadFile(filename)
 	if err != nil {
 		return 0, 0, err
 	}
-
 	fields := strings.Fields(string(data))
 	readCount, _ := strconv.ParseFloat(fields[1], 64)
 	writeCount, _ := strconv.ParseFloat(fields[3], 64)
-
 	return readCount, writeCount, nil
 }
+
 func timetosend() bool {
 	return timePast == 0 || ((timePast-sendDelta)%(scnInterval*TransmitInterval) == 0)
 }
+
 func main() {
 	if len(os.Args) > 1 {
 		ServerIP = os.Args[1]
 	}
 	log.Printf("Server IP: %s\n", ServerIP)
 
-	// Initialize the gRPC connection
+	initialNet, err := net.IOCounters(false)
+	if err != nil {
+		log.Fatalf("Error getting initial network IO counters: %v", err)
+	}
+	BytesStat = bytesstat{
+		BytesSent: initialNet[0].BytesSent,
+		BytesRecv: initialNet[0].BytesRecv,
+	}
+
+	initialDisk, err := disk.IOCounters(DiskName)
+	if err != nil {
+		log.Fatalf("Error getting initial disk IO counters: %v", err)
+	}
+	DiskStats = diskstat{
+		BytesWrite: initialDisk[DiskName].WriteBytes,
+		BytesRead:  initialDisk[DiskName].ReadBytes,
+	}
+
 	conn, err := grpc.NewClient(ServerIP+":50051", grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Fatalf("could not connect: %v", err)
 	}
 	defer conn.Close()
-
-	// Create a new gRPC client
 	client := pb.NewLoadMonitorClient(conn)
 
-	metrics := &pb.Metrics{}
+	// Initialize the metrics
+	// Set the device ID and agent ID
+	metrics := &pb.Metrics{DeviceId: devID, AgentId: agentId}
 
-	//=======================================================
-	// Get the initial network IO counters
-	netCounts, err := net.IOCounters(false)
-	if err != nil {
-		log.Fatalf("Error while getting Network IO Counters: %v", err)
-	}
-	BytesStat := bytesstat{
-		BytesSent: netCounts[0].BytesSent,
-		BytesRecv: netCounts[0].BytesRecv,
-	}
-	//=======================================================
-	// Get the initial disk IO counters
-	diskCounts, err := disk.IOCounters(DiskName)
-	if err != nil {
-		log.Fatalf("Error while getting disk IO Counters: %v", err)
-	}
-	DiskStats := diskstat{
-		BytesWrite: diskCounts[DiskName].WriteBytes,
-		BytesRead:  diskCounts[DiskName].ReadBytes,
-	}
-	//=======================================================
 	for {
-		// MAIN LOOP
-		fmt.Printf("============= Load Scan time: %ds ==============\n", timePast)
+		fmt.Printf("============= Load Scan time: %vs ==============\n", timePast/1000)
 		start_time := t.Now()
-		//============================= CPU Usage =============================
-		cpuPercent, err := cpu.Percent(0, false)
-		if err != nil {
-			log.Fatalf("Error while getting CPU usage: %v", err)
-		}
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.CPUID, ids.LoadID, "CPU Usage", cpuPercent[0])
 
-		//============================= Memory Usage =============================
-		vmStat, err := mem.VirtualMemory()
-		if err != nil {
-			log.Fatalf("Error while getting memory usage: %v", err)
-		}
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.MemoryID, ids.LoadID, "Memory Usage", vmStat.UsedPercent)
+		var wg sync.WaitGroup
+		wg.Add(5)
 
-		//============================= Network Statistics =============================
-		netCounts, err := net.IOCounters(false)
-		if err != nil {
-			log.Fatalf("Error while getting Network IO Counters: %v", err)
-		}
-		kBsOut := float64(netCounts[0].BytesSent-BytesStat.BytesSent) / 1024 / float64(scnInterval)
-		kBsIn := float64(netCounts[0].BytesRecv-BytesStat.BytesRecv) / 1024 / float64(scnInterval)
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.NetworkID, ids.LoadID, "BytesOut", kBsOut)
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.NetworkID, ids.LoadID, "BytesIn", kBsIn)
-		fmt.Printf("Network - Sent: %v kB/s, Received: %v kB/s\n", kBsOut, kBsIn)
-		BytesStat.BytesSent = netCounts[0].BytesSent
-		BytesStat.BytesRecv = netCounts[0].BytesRecv
+		cpuChan := make(chan float64, 1)
+		memChan := make(chan float64, 1)
+		netChan := make(chan NetResult, 1)
+		diskChan := make(chan DiskResult, 1)
+		sensorChan := make(chan SensorResult, 1)
 
-		//============================= Storage (Disk Usage) =============================
-		diskUtil, err := disk.Usage("/")
-		if err != nil {
-			log.Fatalf("Error while getting disk usage: %v", err)
-		}
-		diskCounts, err := disk.IOCounters(DiskName)
-		if err != nil {
-			log.Fatalf("Error while getting disk IO Counters: %v", err)
-		}
-		kBsWrite := float64(diskCounts[DiskName].WriteBytes-DiskStats.BytesWrite) / 1024 / float64(scnInterval)
-		kBsRead := float64(diskCounts[DiskName].ReadBytes-DiskStats.BytesRead) / 1024 / float64(scnInterval)
-		DiskStats.BytesWrite = diskCounts[DiskName].WriteBytes
-		DiskStats.BytesRead = diskCounts[DiskName].ReadBytes
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.DiskID, ids.LoadID, "BytesWrite", kBsWrite)
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.DiskID, ids.LoadID, "BytesRead", kBsRead)
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.DiskID, ids.LoadID, "Disk Usage", diskUtil.UsedPercent)
-		fmt.Printf("Disk - Write: %v kB/s, Read: %v kB/s\n       Total Usage :%.2f%% \n", kBsWrite, kBsRead, diskUtil.UsedPercent)
+		prevBytesStat := BytesStat
+		prevDiskStats := DiskStats
 
-		//============================= Sensoric Load =============================
-		filename := "sensoric_sim/counters.txt"
-		senseRead, senseWrite, err := readSensorData(filename)
-		if err != nil {
-			log.Fatalf("Error reading sensor data: %v", err)
-		}
-		fmt.Printf("sensoric Load - Reads: %v, Writes: %v\n", senseRead, senseWrite)
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.SensoricID, ids.LoadID, "Sensoric Read", senseRead)
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.SensoricID, ids.LoadID, "Sensoric Write", senseWrite)
-
-		//==========================================================================
-		// Print the metrics buffer length and trim if necessary
-		fmt.Printf("metrics length: %v\n", len(metrics.Metrics))
-		if len(metrics.Metrics) > MetricsLen*MaxMetricBuff {
-			fmt.Printf("Trimming oldest metrics...\n")
-			metrics.Metrics = metrics.Metrics[MetricsLen:] // Trim the oldest metrics
-		}
-
-		//================================= Sending Data =================================
-		if timetosend() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*t.Second)
-			resp, err := client.LoadData(ctx, metrics)
-			cancel() // cancel the context after the call finishes
-
-			if err != nil {
-				log.Printf("Error while calling LoadData: %v", err)
-			} else {
-				log.Printf("Response from server: %v", resp)
-
-				TransmitInterval = int(resp.TransMult) // Update transmit multiplier
-				newScnInterval := int(resp.ScnFreq)
-				if scnInterval != newScnInterval {
-					scnInterval = newScnInterval       // Update scan interval
-					sendDelta = timePast % scnInterval // Update send delta for correct sending timing
-				}
-				metrics = &pb.Metrics{} // Reset metrics after sending
+		go func() {
+			defer wg.Done()
+			cpuPercents, err := cpu.Percent(0, false)
+			if err != nil || len(cpuPercents) == 0 {
+				log.Printf("Error getting CPU usage: %v", err)
+				cpuChan <- 0
+				return
 			}
+			cpuChan <- cpuPercents[0]
+		}()
+
+		go func() {
+			defer wg.Done()
+			vmStat, err := mem.VirtualMemory()
+			if err != nil {
+				log.Printf("Error getting memory usage: %v", err)
+				memChan <- 0
+				return
+			}
+			memChan <- vmStat.UsedPercent
+		}()
+
+		go func(prev bytesstat) {
+			defer wg.Done()
+			netCounts, err := net.IOCounters(false)
+			if err != nil {
+				log.Printf("Error getting network IO counters: %v", err)
+				netChan <- NetResult{}
+				return
+			}
+			newSent := netCounts[0].BytesSent
+			newRecv := netCounts[0].BytesRecv
+			kBsOut := float64(newSent-prev.BytesSent) / float64(scnInterval) / 1024
+			kBsIn := float64(newRecv-prev.BytesRecv) / float64(scnInterval) / 1024
+			netChan <- NetResult{kBsOut, kBsIn, newSent, newRecv}
+		}(prevBytesStat)
+
+		go func(prev diskstat) {
+			defer wg.Done()
+			diskUtil, err := disk.Usage("/")
+			if err != nil {
+				log.Printf("Error getting disk usage: %v", err)
+			}
+			diskCounts, err := disk.IOCounters(DiskName)
+			if err != nil {
+				log.Printf("Error getting disk IO counters: %v", err)
+				diskChan <- DiskResult{}
+				return
+			}
+			newWrite := diskCounts[DiskName].WriteBytes
+			newRead := diskCounts[DiskName].ReadBytes
+			kBsWrite := float64(newWrite-prev.BytesWrite) / float64(scnInterval) / 1024
+			kBsRead := float64(newRead-prev.BytesRead) / float64(scnInterval) / 1024
+			diskChan <- DiskResult{kBsWrite, kBsRead, diskUtil.UsedPercent, newWrite, newRead}
+		}(prevDiskStats)
+
+		go func() {
+			defer wg.Done()
+			filename := "../../sensoric_sim/counters.txt"
+			data, err := os.ReadFile(filename)
+			if err != nil {
+				log.Printf("Error reading sensor data: %v", err)
+				sensorChan <- SensorResult{}
+				return
+			}
+
+			fields := strings.Fields(string(data))
+			senseRead, _ := strconv.ParseFloat(fields[1], 64)
+			senseWrite, _ := strconv.ParseFloat(fields[3], 64)
+			sensorChan <- SensorResult{senseRead, senseWrite}
+		}()
+
+		wg.Wait()
+
+		cpuUsage := <-cpuChan
+		memUsage := <-memChan
+		netResult := <-netChan
+		diskResult := <-diskChan
+		sensorResult := <-sensorChan
+
+		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, "CPU Usage", cpuUsage)
+		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, "Memory Usage", memUsage)
+		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, "BytesOut", netResult.kBsOut)
+		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, "BytesIn", netResult.kBsIn)
+		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, "BytesWrite", diskResult.kBsWrite)
+		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, "BytesRead", diskResult.kBsRead)
+		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, "Disk Usage", diskResult.diskUsage)
+		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, "Sensoric Read", sensorResult.senseRead)
+		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, "Sensoric Write", sensorResult.senseWrite)
+
+		BytesStat.BytesSent = netResult.newSent
+		BytesStat.BytesRecv = netResult.newRecv
+		DiskStats.BytesWrite = diskResult.newWrite
+		DiskStats.BytesRead = diskResult.newRead
+
+		if len(metrics.Metrics) > MetricsLen*MaxMetricBuff {
+			metrics.Metrics = metrics.Metrics[MetricsLen:]
+		}
+		prtMetrics(metrics)
+		if timetosend() {
+			// Save current batch in a local variable.
+			m := metrics
+
+			go func(m *pb.Metrics) {
+				start := t.Now()
+				ctx, cancel := context.WithTimeout(context.Background(), 5*t.Second)
+				resp, err := client.LoadData(ctx, m)
+				cancel()
+				if err != nil {
+					log.Printf("Error while asynchronously sending data: %v", err)
+				} else {
+					log.Printf("Asynchronous response: %v", resp)
+					TransmitInterval = int(resp.TransMult)
+					newScnInterval := int(resp.ScnFreq)
+					if scnInterval != newScnInterval {
+						scnInterval = newScnInterval
+						sendDelta = timePast % scnInterval
+					}
+				}
+				stop_time := t.Since(start)
+				fmt.Printf("Asynchronous sending time: %v\n", stop_time)
+			}(m)
+			// Prepare a new batch.
+			metrics = &pb.Metrics{DeviceId: devID, AgentId: agentId}
 		}
 
 		timePast += scnInterval
-		// Compensate for the time taken to process the metrics
 		stop_time := t.Since(start_time)
 		fmt.Printf("Total time taken: %v\n", stop_time)
 		delta_sleep := (t.Duration(scnInterval) * t.Millisecond) - stop_time
 		t.Sleep(delta_sleep)
-
 	}
 }

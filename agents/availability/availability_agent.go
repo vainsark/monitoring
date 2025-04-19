@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	t "time"
 
 	"github.com/shirou/gopsutil/net"
@@ -27,18 +28,24 @@ var (
 	sendDelta        = 0
 	MetricsLen       = 9
 	ServerIP         = "localhost"
+	devID            = ids.DeviceId
+	agentId          = ids.AvailabilityID
 )
 
 type dropstats struct {
-	dropins  uint64
-	dropouts uint64
+	dropins     float64
+	dropouts    float64
+	newdropins  float64
+	newdropouts float64
+}
+type memstats struct {
+	swaps   float64
+	swapsMB float64
 }
 
-func updateOrAppendMetric(metrics []*pb.Metric, id int32, agentId int32, dataName string, data float64) []*pb.Metric {
+func updateOrAppendMetric(metrics []*pb.Metric, dataName string, data float64) []*pb.Metric {
 	// Append a new metric to the metrics slice
 	newMetric := &pb.Metric{
-		Id:        id,
-		AgentId:   agentId,
 		DataName:  dataName,
 		Data:      data,
 		Timestamp: timestamppb.New(t.Now()),
@@ -50,71 +57,122 @@ func timetosend() bool {
 	return timePast == 0 || ((timePast-sendDelta)%(scnInterval*TransmitInterval) == 0)
 }
 func main() {
+	// Set the server IP address from command line argument or use default
 	if len(os.Args) > 1 {
 		ServerIP = os.Args[1]
 	}
 	log.Printf("Server IP: %s\n", ServerIP)
-	// Initialize the gRPC client
+
+	// New gRPC connection
 	conn, err := grpc.NewClient(ServerIP+":50051", grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Fatalf("could not connect: %v", err)
 	}
 	defer conn.Close()
-
 	client := pb.NewLoadMonitorClient(conn)
 
-	metrics := &pb.Metrics{}
+	// Initialize the metrics
+	// Set the device ID and agent ID
+	metrics := &pb.Metrics{DeviceId: devID, AgentId: agentId}
 	//=======================================================
-
+	// Initialize the drop statistics
 	netStats, err := net.IOCounters(false)
 	if err != nil {
 		log.Fatalf("Error while getting Network IO Counters: %v", err)
 	}
 	DropStats := dropstats{
-		dropins:  netStats[0].Dropin,
-		dropouts: netStats[0].Dropout,
+		newdropins:  float64(netStats[0].Dropin),
+		newdropouts: float64(netStats[0].Dropout),
 	}
 	//=======================================================
 
 	for {
+
 		fmt.Printf("============= Availability Scan time: %ds ==============\n", timePast)
 		start_time := t.Now()
+		var wg sync.WaitGroup
+		wg.Add(5)
 
+		cpuChan := make(chan float64, 1)
+		memChan := make(chan memstats, 1)
+		netChan := make(chan dropstats, 1)
+
+		prevDropStats := DropStats
 		//============================= CPU Idle Time Percent =============================
-		cmd := exec.Command("bash", "-c", "iostat -c 2 1 ")
-		output, err := cmd.Output()
-		if err != nil {
-			log.Fatalf("Error running iostat command: %v", err)
-		}
-		// outputStr := string(output)
-		fields := strings.Fields(string(output))
-		idle_percent, _ := strconv.ParseFloat(fields[19], 64)
-		fmt.Printf("CPU Idle time percent: %v%% \n", idle_percent)
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.CPUID, ids.AvailabilityID, "Idle Percent", idle_percent)
+		go func() {
+			defer wg.Done()
+			cmd := exec.Command("bash", "-c", "iostat -c 2 1 ")
+			output, err := cmd.Output()
+			if err != nil {
+				log.Fatalf("Error running iostat command: %v", err)
+				cpuChan <- 0
+				return
+			}
+			// outputStr := string(output)
+			fields := strings.Fields(string(output))
+			idle_percent, _ := strconv.ParseFloat(fields[19], 64)
+			fmt.Printf("CPU Idle time percent: %v%% \n", idle_percent)
+			cpuChan <- idle_percent
+		}()
 
 		//============================= Memory Swaps =============================
-		swapStat, err := mem.SwapMemory()
-		if err != nil {
-			log.Fatalf("Error while getting memory swaps: %v", err)
-		}
-		fmt.Printf("Swap Usage: %.2f%% (Total: %v MB, Used: %v MB)\n", swapStat.UsedPercent, swapStat.Total/1024/1024, swapStat.Used/1024/1024)
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.MemoryID, ids.AvailabilityID, "Memory Swaps", swapStat.UsedPercent)
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.MemoryID, ids.AvailabilityID, "Memory Swaps MB", float64(swapStat.Used/1024/1024))
+		go func() {
+			defer wg.Done()
+			swapStat, err := mem.SwapMemory()
+			if err != nil {
+				log.Fatalf("Error while getting memory swaps: %v", err)
+				memChan <- memstats{}
+				return
+			}
+			fmt.Printf("Swap Usage: %.2f%% (Total: %v MB, Used: %v MB)\n", swapStat.UsedPercent, swapStat.Total/1024/1024, swapStat.Used/1024/1024)
+
+			memChan <- memstats{
+				swaps:   swapStat.UsedPercent,
+				swapsMB: float64(swapStat.Used / 1024 / 1024),
+			}
+		}()
 
 		//============================= Network Statistics =============================
-		netStats, err := net.IOCounters(false)
-		if err != nil {
-			log.Fatalf("Error while getting network IO counters: %v", err)
-		}
-		deltain := netStats[0].Dropin - DropStats.dropins
-		deltaout := netStats[0].Dropout - DropStats.dropouts
-		DropStats.dropins = netStats[0].Dropin
-		DropStats.dropouts = netStats[0].Dropout
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.NetworkID, ids.AvailabilityID, "DropsIn", float64(deltain))
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.NetworkID, ids.AvailabilityID, "DropsOut", float64(deltaout))
-		fmt.Printf("Dropped In: %v Packets, Dropped Out: %v Packets\n", deltain, deltaout)
+		go func(prev dropstats) {
+			defer wg.Done()
+			netStats, err := net.IOCounters(false)
+			if err != nil {
+				log.Fatalf("Error while getting network IO counters: %v", err)
+				netChan <- dropstats{}
+				return
+			}
+			newIn := float64(netStats[0].Dropin)
+			newOut := float64(netStats[0].Dropout)
+			deltain := newIn - prev.newdropins/float64(scnInterval)
+			deltaout := newOut - prev.newdropouts/float64(scnInterval)
+
+			netChan <- dropstats{
+				dropins:     deltain,
+				dropouts:    deltaout,
+				newdropins:  newIn,
+				newdropouts: newOut,
+			}
+			fmt.Printf("Dropped In: %v Packets, Dropped Out: %v Packets\n", deltain, deltaout)
+
+		}(prevDropStats)
+
+		wg.Wait()
+
+		idle_percent := <-cpuChan
+		swapStat := <-memChan
+
+		deltadrops := <-netChan
 
 		//==========================================================================
+		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, "Idle Percent", idle_percent)
+		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, "Memory Swaps", swapStat.swaps)
+		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, "Memory Swaps MB", float64(swapStat.swapsMB))
+		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, "DropsIn", float64(deltadrops.dropins))
+		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, "DropsOut", float64(deltadrops.dropouts))
+
+		DropStats.dropins = deltadrops.dropins
+		DropStats.dropouts = deltadrops.dropouts
+
 		// Print the metrics buffer length and trim if necessary
 		fmt.Printf("metrics length: %v\n", len(metrics.Metrics))
 		if len(metrics.Metrics) > MetricsLen*MaxMetricBuff {

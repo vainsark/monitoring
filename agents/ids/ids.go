@@ -1,10 +1,11 @@
 package ids
 
 const (
-	LoadID         = 1
-	LatencyID      = 2
-	AvailabilityID = 3
+	LoadID         int32 = 1
+	LatencyID      int32 = 2
+	AvailabilityID int32 = 3
 
+	DeviceId   = "VM"
 	CPUID      = 1
 	MemoryID   = 2
 	DiskID     = 3

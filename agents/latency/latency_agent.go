@@ -33,13 +33,13 @@ var (
 	MetricsLen       = 9
 	ServerIP         = "localhost"
 	DiskName         = ids.StorageLinuxID
+	devID            = ids.DeviceId
+	agentId          = ids.LoadID
 )
 
-func updateOrAppendMetric(metrics []*pb.Metric, id int32, agentId int32, dataName string, data float64) []*pb.Metric {
+func updateOrAppendMetric(metrics []*pb.Metric, dataName string, data float64) []*pb.Metric {
 	// Append a new metric to the metrics slice
 	newMetric := &pb.Metric{
-		Id:        id,
-		AgentId:   agentId,
 		DataName:  dataName,
 		Data:      data,
 		Timestamp: timestamppb.New(t.Now()),
@@ -116,7 +116,9 @@ func main() {
 	client := pb.NewLoadMonitorClient(conn)
 
 	//=======================================================
-	metrics := &pb.Metrics{}
+	// Initialize the metrics
+	// Set the device ID and agent ID
+	metrics := &pb.Metrics{DeviceId: devID, AgentId: agentId}
 
 	for {
 		// MAIN LOOP
@@ -127,7 +129,7 @@ func main() {
 
 		latency := measureMemoryLatency()
 		fmt.Printf("Average Memory Latency: %v\n", latency)
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.MemoryID, ids.LatencyID, "Memory Latency", float64(latency))
+		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, "Memory Latency", float64(latency))
 
 		//============================= Storage (IOSTAT) =============================
 
@@ -146,8 +148,8 @@ func main() {
 		fmt.Printf("avg read wait: %.2f ms\n", r_wait)
 		fmt.Printf("avg write wait: %.2f ms\n", w_wait)
 
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.DiskID, ids.LatencyID, "read wait", r_wait)
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.DiskID, ids.LatencyID, "write wait", w_wait)
+		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, "read wait", r_wait)
+		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, "write wait", w_wait)
 
 		//============================= Network Statistics =============================
 
@@ -167,13 +169,13 @@ func main() {
 		stats := pinger.Statistics()
 		AvgRtt := float64(t.Duration(stats.AvgRtt).Microseconds()) / 1000
 		fmt.Printf("Ping Results: %.2f\n", AvgRtt)
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.NetworkID, ids.LatencyID, "NetInterLaten", AvgRtt)
+		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, "NetInterLaten", AvgRtt)
 
 		//============================= Sensoric Latency =============================
 
 		senseRT := simulSenseLatency()
 		fmt.Printf("Simulated Sensoric Latency: %v\n", senseRT)
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, ids.SensoricID, ids.LatencyID, "Sensor Latency", float64(senseRT)/1000)
+		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, "Sensor Latency", float64(senseRT)/1000)
 
 		//==========================================================================
 		// Print the metrics buffer length and trim if necessary

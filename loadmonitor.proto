@@ -9,21 +9,33 @@ import "google/protobuf/timestamp.proto";
 service LoadMonitor {
     rpc LoadData (Metrics) returns (MetricsAck);
 }
+service UserInput {
+    rpc ScanParams (UserParams) returns (UserParamsAck);
+}
 
 message Metric {
-    int32 Id = 1;
-    int32 agentId = 2;
-    string DataName = 3;
-    double Data = 4;
-    google.protobuf.Timestamp Timestamp = 5;
+    string DataName = 1;
+    double Data = 2;
+    google.protobuf.Timestamp Timestamp = 3;
 }
 
 message Metrics {
-    repeated Metric Metrics = 1;
+    string DeviceId = 1;
+    int32 agentId = 2;
+    repeated Metric Metrics = 3;
 }
 
 message MetricsAck {
     int32 Ack = 1;
     int32 ScnFreq = 2;
     int32 TransMult = 3;
+}
+
+message UserParams {
+    string DeviceId = 1;
+    int32 ScnFreq = 2;
+    int32 TransMult = 3;
+}
+message UserParamsAck {
+    int32 Ack = 1;
 }

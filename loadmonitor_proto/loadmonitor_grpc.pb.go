@@ -119,3 +119,105 @@ var LoadMonitor_ServiceDesc = grpc.ServiceDesc{
 	Streams:  []grpc.StreamDesc{},
 	Metadata: "loadmonitor.proto",
 }
+
+const (
+	UserInput_ScanParams_FullMethodName = "/loadmonitor.UserInput/ScanParams"
+)
+
+// UserInputClient is the client API for UserInput service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+type UserInputClient interface {
+	ScanParams(ctx context.Context, in *UserParams, opts ...grpc.CallOption) (*UserParamsAck, error)
+}
+
+type userInputClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewUserInputClient(cc grpc.ClientConnInterface) UserInputClient {
+	return &userInputClient{cc}
+}
+
+func (c *userInputClient) ScanParams(ctx context.Context, in *UserParams, opts ...grpc.CallOption) (*UserParamsAck, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UserParamsAck)
+	err := c.cc.Invoke(ctx, UserInput_ScanParams_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// UserInputServer is the server API for UserInput service.
+// All implementations must embed UnimplementedUserInputServer
+// for forward compatibility.
+type UserInputServer interface {
+	ScanParams(context.Context, *UserParams) (*UserParamsAck, error)
+	mustEmbedUnimplementedUserInputServer()
+}
+
+// UnimplementedUserInputServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedUserInputServer struct{}
+
+func (UnimplementedUserInputServer) ScanParams(context.Context, *UserParams) (*UserParamsAck, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ScanParams not implemented")
+}
+func (UnimplementedUserInputServer) mustEmbedUnimplementedUserInputServer() {}
+func (UnimplementedUserInputServer) testEmbeddedByValue()                   {}
+
+// UnsafeUserInputServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to UserInputServer will
+// result in compilation errors.
+type UnsafeUserInputServer interface {
+	mustEmbedUnimplementedUserInputServer()
+}
+
+func RegisterUserInputServer(s grpc.ServiceRegistrar, srv UserInputServer) {
+	// If the following call pancis, it indicates UnimplementedUserInputServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&UserInput_ServiceDesc, srv)
+}
+
+func _UserInput_ScanParams_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UserParams)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(UserInputServer).ScanParams(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: UserInput_ScanParams_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(UserInputServer).ScanParams(ctx, req.(*UserParams))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// UserInput_ServiceDesc is the grpc.ServiceDesc for UserInput service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var UserInput_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "loadmonitor.UserInput",
+	HandlerType: (*UserInputServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "ScanParams",
+			Handler:    _UserInput_ScanParams_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "loadmonitor.proto",
+}
