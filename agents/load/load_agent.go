@@ -135,6 +135,7 @@ func main() {
 	metrics := &pb.Metrics{DeviceId: devID, AgentId: agentId}
 
 	for {
+
 		intervalSec := float64(scnInterval) / 1000
 
 		fmt.Printf("============= Load Scan time: %vs ==============\n", timePast/1000)
@@ -186,8 +187,8 @@ func main() {
 			newRecv := netCounts[0].BytesRecv
 			deltaSent := netCounts[0].BytesSent - prev.BytesSent
 			deltaRecv := netCounts[0].BytesRecv - prev.BytesRecv
-			kBsOut := float64(deltaSent) / 1024.0 / intervalSec
-			kBsIn := float64(deltaRecv) / 1024.0 / intervalSec
+			kBsOut := float64(deltaSent) / 1000 / intervalSec
+			kBsIn := float64(deltaRecv) / 1000 / intervalSec
 			netChan <- NetResult{kBsOut, kBsIn, newSent, newRecv}
 		}(prevBytesStat)
 
@@ -207,9 +208,9 @@ func main() {
 			newRead := diskCounts[DiskName].ReadBytes
 			deltaWrite := newWrite - prev.BytesWrite
 			deltaRead := newRead - prev.BytesRead
-
-			kBsWrite := float64(deltaWrite) / 1024.0 / intervalSec
-			kBsRead := float64(deltaRead) / 1024.0 / intervalSec
+			// convert Bytes to kB/s
+			kBsWrite := float64(deltaWrite) / 1000 / intervalSec
+			kBsRead := float64(deltaRead) / 1000 / intervalSec
 			diskChan <- DiskResult{kBsWrite, kBsRead, diskUtil.UsedPercent, newWrite, newRead}
 		}(prevDiskStats)
 

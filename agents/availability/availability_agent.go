@@ -96,7 +96,7 @@ func main() {
 
 	for {
 		intervalSec := float64(scnInterval) / 1000
-		fmt.Printf("============= Availability Scan time: %ds ==============\n", timePast)
+		fmt.Printf("============= Availability Scan time: %ds ==============\n", timePast/1000)
 		start_time := t.Now()
 
 		var wg sync.WaitGroup
@@ -119,7 +119,7 @@ func main() {
 			}
 			// outputStr := string(output)
 			fields := strings.Fields(string(output))
-			idle_percent, _ := strconv.ParseFloat(fields[19], 64)
+			idle_percent, _ := strconv.ParseFloat(fields[32], 64)
 			cpuChan <- idle_percent
 		}()
 

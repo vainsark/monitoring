@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	t "time"
 
 	"github.com/go-ping/ping"
@@ -37,6 +38,19 @@ var (
 	agentId          = ids.LoadID
 )
 
+type DiskResult struct {
+	r_wait float64
+	w_wait float64
+}
+
+func prtMetrics(metrics *pb.Metrics) {
+	fmt.Printf("DeviceId: %s\n", metrics.DeviceId)
+	fmt.Printf("AgentId: %d\n", metrics.AgentId)
+	for _, metric := range metrics.Metrics {
+		fmt.Printf("  %s: ", metric.DataName)
+		fmt.Printf(" %.2f\n", metric.Data)
+	}
+}
 func updateOrAppendMetric(metrics []*pb.Metric, dataName string, data float64) []*pb.Metric {
 	// Append a new metric to the metrics slice
 	newMetric := &pb.Metric{
@@ -83,7 +97,7 @@ func simulSenseLatency() t.Duration {
 		deviation = -deviation
 	}
 	devTime := t.Duration(deviation) * t.Microsecond
-
+	fmt.Println("Sensoric FUNCTION")
 	return minRT + devTime
 }
 func timetosend() bool {
@@ -99,20 +113,19 @@ func main() {
 	fields := strings.Fields(string(output))
 	defaultIP := fields[2]
 	fmt.Println("Default IP:", defaultIP)
-
 	//=======================================================
 
 	if len(os.Args) > 1 {
 		ServerIP = os.Args[1]
 	}
 	log.Printf("Server IP: %s\n", ServerIP)
+
 	// Initialize the gRPC client
 	conn, err := grpc.NewClient(ServerIP+":50051", grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Fatalf("could not connect: %v", err)
 	}
 	defer conn.Close()
-
 	client := pb.NewLoadMonitorClient(conn)
 
 	//=======================================================
@@ -125,58 +138,78 @@ func main() {
 		fmt.Printf("============= Latency Scan time: %ds ==============\n", timePast)
 		start_time := t.Now()
 
+		var wg sync.WaitGroup
+		wg.Add(4) // Number of goroutines to wait for
+		// cpuChan := make(chan float64, 1)
+		memChan := make(chan t.Duration, 1)
+		diskchan := make(chan DiskResult, 1)
+		netChan := make(chan float64, 1)
+		sensorChan := make(chan t.Duration, 1)
 		//============================= Memory Latency =============================
-
-		latency := measureMemoryLatency()
-		fmt.Printf("Average Memory Latency: %v\n", latency)
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, "Memory Latency", float64(latency))
-
+		go func() {
+			defer wg.Done()
+			latency := measureMemoryLatency()
+			memChan <- latency
+		}()
 		//============================= Storage (IOSTAT) =============================
-
-		cmd := exec.Command("bash", "-c", "iostat -dx ", DiskName, "2 2| awk 'NR>2 {print $6, $12}'")
-		output, err := cmd.Output()
-		if err != nil {
-			log.Fatalf("Error running iostat command: %v", err)
-		}
-		// Convert the output (bytes) to a string.
-		outputStr := string(output)
-		fields := strings.Fields(outputStr)
-		r_wait, _ := strconv.ParseFloat(fields[6], 64)
-		w_wait, _ := strconv.ParseFloat(fields[7], 64)
-		fmt.Printf("Raw string for read: %s\n", fields[6])
-		fmt.Printf("Raw string for write: %s\n", fields[7])
-		fmt.Printf("avg read wait: %.2f ms\n", r_wait)
-		fmt.Printf("avg write wait: %.2f ms\n", w_wait)
-
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, "read wait", r_wait)
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, "write wait", w_wait)
-
+		go func() {
+			defer wg.Done()
+			cmd := exec.Command("bash", "-c", "iostat -dx "+DiskName+" 1 2| awk 'NR>2 {print $6, $12}'")
+			output, err := cmd.Output()
+			if err != nil {
+				log.Fatalf("Error running iostat command: %v", err)
+			}
+			outputStr := string(output)
+			fields := strings.Fields(outputStr)
+			r_wait, _ := strconv.ParseFloat(fields[6], 64)
+			w_wait, _ := strconv.ParseFloat(fields[7], 64)
+			fmt.Printf("Raw string for read: %s\n", fields[6])
+			fmt.Printf("Raw string for write: %s\n", fields[7])
+			diskchan <- DiskResult{r_wait: r_wait, w_wait: w_wait}
+		}()
 		//============================= Network Statistics =============================
-
-		// Run the pinger
-		pinger, err := ping.NewPinger(defaultIP)
-		if err != nil {
-			log.Fatalf("Failed to initialize pinger: %v", err)
-		}
-		pinger.Count = 1
-		pinger.SetPrivileged(true)
-		err = pinger.Run()
-		if err != nil {
-			log.Fatalf("Ping failed: %v", err)
-		}
-
-		// Get the results of the pings
-		stats := pinger.Statistics()
-		AvgRtt := float64(t.Duration(stats.AvgRtt).Microseconds()) / 1000
-		fmt.Printf("Ping Results: %.2f\n", AvgRtt)
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, "NetInterLaten", AvgRtt)
-
+		go func() {
+			defer wg.Done()
+			// Run the pinger
+			pinger, err := ping.NewPinger(defaultIP)
+			if err != nil {
+				log.Printf("Failed to initialize pinger: %v", err)
+				netChan <- 0
+				return
+			}
+			pinger.Count = 1
+			pinger.SetPrivileged(true)
+			err = pinger.Run()
+			if err != nil {
+				log.Printf("Ping failed: %v", err)
+				netChan <- 0
+				return
+			}
+			// Get the results of the pings
+			stats := pinger.Statistics()
+			AvgRtt := float64(t.Duration(stats.AvgRtt).Microseconds()) / 1000
+			netChan <- AvgRtt
+		}()
 		//============================= Sensoric Latency =============================
-
-		senseRT := simulSenseLatency()
-		fmt.Printf("Simulated Sensoric Latency: %v\n", senseRT)
+		go func() {
+			defer wg.Done()
+			senseRT := simulSenseLatency()
+			sensorChan <- senseRT
+		}()
+		//=======================================================
+		// Wait for all goroutines to finish
+		wg.Wait()
+		// Close the channels
+		latency := <-memChan
+		diskResult := <-diskchan
+		AvgRtt := <-netChan
+		senseRT := <-sensorChan
+		//=======================================================
+		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, "Memory Latency", float64(latency))
+		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, "read wait", diskResult.r_wait)
+		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, "write wait", diskResult.w_wait)
+		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, "NetInterLaten", AvgRtt)
 		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, "Sensor Latency", float64(senseRT)/1000)
-
 		//==========================================================================
 		// Print the metrics buffer length and trim if necessary
 		fmt.Printf("metrics length: %v\n", len(metrics.Metrics))
@@ -185,24 +218,32 @@ func main() {
 			metrics.Metrics = metrics.Metrics[MetricsLen:] // Trim the oldest metrics
 		}
 		//================================= Sending Data =================================
+		prtMetrics(metrics)
 		if timetosend() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*t.Second)
-			resp, err := client.LoadData(ctx, metrics)
-			cancel() // cancel the context after the call finishes
+			// Save current batch in a local variable.
 
-			if err != nil {
-				log.Printf("Error while calling LoadData: %v", err)
-			} else {
-				log.Printf("Response from server: %v", resp)
-
-				TransmitInterval = int(resp.TransMult) // Update transmit multiplier
-				newScnInterval := int(resp.ScnFreq)
-				if scnInterval != newScnInterval {
-					scnInterval = newScnInterval       // Update scan interval
-					sendDelta = timePast % scnInterval // Update send delta for correct sending timing
+			m := metrics
+			metrics = &pb.Metrics{DeviceId: devID, AgentId: agentId} // new metrics.
+			// Send the data to the server
+			go func(m *pb.Metrics) {
+				start := t.Now()
+				ctx, cancel := context.WithTimeout(context.Background(), 5*t.Second)
+				resp, err := client.LoadData(ctx, m)
+				cancel()
+				if err != nil {
+					log.Printf("Error while asynchronously sending data: %v", err)
+				} else {
+					log.Printf("Asynchronous response: %v", resp)
+					TransmitInterval = int(resp.TransMult)
+					newScnInterval := int(resp.ScnFreq)
+					if scnInterval != newScnInterval {
+						scnInterval = newScnInterval
+						sendDelta = timePast % scnInterval
+					}
 				}
-				metrics = &pb.Metrics{} // Reset metrics after sending
-			}
+				stop_time := t.Since(start)
+				fmt.Printf("Asynchronous sending time: %v\n", stop_time)
+			}(m)
 		}
 
 		timePast += scnInterval
@@ -210,6 +251,5 @@ func main() {
 		fmt.Printf("Total time taken: %v\n", stop_time)
 		delta_sleep := (t.Duration(scnInterval) * t.Millisecond) - stop_time
 		t.Sleep(delta_sleep)
-
 	}
 }
