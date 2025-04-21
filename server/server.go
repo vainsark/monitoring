@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net"
 	"os"
@@ -9,27 +10,37 @@ import (
 	t "time"
 
 	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
+	"github.com/influxdata/influxdb-client-go/v2/api"
 	pb "github.com/vainsark/monitoring/loadmonitor_proto"
 	"google.golang.org/grpc"
 )
 
-var (
+const (
 	// InfluxDB client configuration
+	// influxURL          = ids.InfluxURL
+	// influxToken        = ids.InfluxToken
+	// influxOrg          = ids.InfluxOrg
+	// influxBucket       = ids.InfluxBucket
 	influxURL   = "http://localhost:8086"
 	influxToken = "dvKsoUSbn-7vW04bNFdZeL87TNissgRP43i_ttrg-Vx3LdkzKJHucylmomEasS9an7lGv_TyZRj6-dHINMjXVA=="
 	// influxToken  = "Ib2fq58MyBy2OUR9Aa3Lv2BN1uNBYnwMTsx4pyOSDzqoLZF6qKMTnfsB7hRO0_aFwxEOUPtbt3NUmyvs8RyhCw==" // Laptop
-	influxOrg          = "vainsark"
-	influxBucket       = "metrics"
-	scan         int32 = 5000 // Default scan interval in seconds
-	transmit     int32 = 1    // Default transmit interval multiplier
+	influxOrg         = "vainsark"
+	influxBucket      = "metrics"
+	configMeasurement = "device_params"
+	// fixedTimestamp lets each write overwrite the prior one
+	// fixedTimestampSec = int64(0)
 )
 
-type deviceParams struct {
+var (
+	scan            int32 = 3000 // Default scan interval in seconds
+	transmit        int32 = 1    // Default transmit interval multiplier
+	deviceParamsMap       = make(map[string]map[int32]agentParams)
+)
+
+type agentParams struct {
 	ScnFreq   int32
 	TransMult int32
 }
-
-var deviceParamsMap = make(map[string]deviceParams)
 
 type server struct {
 	pb.UnimplementedLoadMonitorServer
@@ -40,14 +51,133 @@ type server struct {
 
 type userService struct {
 	pb.UnimplementedUserInputServer
+	influxClient influxdb2.Client
+	org          string
+	bucket       string
 }
 
-func setParams(deviceID string, p deviceParams) {
-	deviceParamsMap[deviceID] = p
+func getAgentName(agentID int32) string {
+	// Map the agent id to a readable name.
+	switch agentID {
+	case 1:
+		return "Load"
+	case 2:
+		return "Latency"
+	case 3:
+		return "Availability"
+	default:
+		return "Misc"
+	}
 }
-func getParams(deviceID string) (deviceParams, bool) {
-	p, ok := deviceParamsMap[deviceID]
-	return p, ok
+func getAgentID(agentID string) int32 {
+	// Map the agent id to a readable name.
+	switch agentID {
+	case "Load":
+		return 1
+	case "Latency":
+		return 2
+	case "Availability":
+		return 3
+	default:
+		return 0
+	}
+}
+
+func storeParams(deviceID string, agentID int32, p agentParams, w api.WriteAPIBlocking, ctx context.Context) error {
+	entry := influxdb2.NewPoint(
+		configMeasurement,
+		map[string]string{
+			"deviceId": deviceID,
+			"agentId":  getAgentName(agentID),
+		},
+		map[string]interface{}{
+			"ScnFreq":   p.ScnFreq,
+			"TransMult": p.TransMult,
+		},
+		t.Unix(0, 0), // always the same moment
+	)
+	return w.WritePoint(ctx, entry)
+}
+
+func loadParams(client influxdb2.Client) error {
+	flux := fmt.Sprintf(`
+		from(bucket:"%s")
+		|> range(start:0)
+		|> filter(fn: (r) => r._measurement == "%s" 
+		and (r._field == "ScnFreq" or r._field == "TransMult"))`,
+		influxBucket, configMeasurement)
+
+	queryAPI := client.QueryAPI(influxOrg)
+	result, err := queryAPI.Query(context.Background(), flux)
+	if err != nil {
+		return err
+	}
+	defer result.Close()
+
+	temp := make(map[string]map[int32]agentParams)
+	// Iterate over query response
+	for result.Next() {
+		// Parse the current result from the query
+		rec := result.Record()
+		devID := rec.ValueByKey("deviceId").(string)
+		agentName := rec.ValueByKey("agentId").(string) // now a string tag
+		agentId := getAgentID(agentName)                // convert to int32
+		field := rec.Field()                            // "ScnFreq" or "TransMult"
+		val := int32(rec.Value().(int64))               // the numeric value
+
+		// 1) Make sure the inner map exists
+		if _, ok := temp[devID]; !ok {
+			temp[devID] = make(map[int32]agentParams)
+		}
+
+		// 2) Pull out the in‑progress struct (zero‑value if first time)
+		ap := temp[devID][agentId]
+
+		// 3) Fill in whichever field this row represents
+		switch field {
+		case "ScnFreq":
+			ap.ScnFreq = int32(val)
+		case "TransMult":
+			ap.TransMult = int32(val)
+		}
+
+		// 4) Write it back into the temp map
+		temp[devID][agentId] = ap
+	}
+	if result.Err() != nil {
+		return result.Err()
+	}
+
+	// 5) Now that each agentParams is fully populated, call setParams:
+	for devID, agents := range temp {
+		for agentName, ap := range agents {
+			setParams(devID, agentName, ap)
+		}
+	}
+
+	return nil
+}
+
+func setParams(deviceID string, agentID int32, p agentParams) {
+	/*Check for device's params map
+	If it doesn't exist, create a new map for the device */
+	if _, exists := deviceParamsMap[deviceID]; !exists {
+		log.Printf("Creating new params map for Device: %s\n", deviceID)
+		deviceParamsMap[deviceID] = make(map[int32]agentParams)
+	}
+	// write into the inner map
+	log.Printf("Setting params for Device: %s, Agent: %d\n", deviceID, agentID)
+	deviceParamsMap[deviceID][agentID] = p
+}
+func getParams(deviceID string, agentID int32) (agentParams, bool) {
+	// check the outer map
+	agents, ok := deviceParamsMap[deviceID]
+	if !ok {
+		return agentParams{}, false
+	}
+	// then check the inner map
+	p, found := agents[agentID]
+	return p, found
 }
 
 func (s *server) LoadData(ctx context.Context, in *pb.Metrics) (*pb.MetricsAck, error) {
@@ -59,17 +189,8 @@ func (s *server) LoadData(ctx context.Context, in *pb.Metrics) (*pb.MetricsAck, 
 	log.Printf("Received Load Data for Device: %s\n", deviceID)
 	// Define the Agent name.
 
-	agentName := ""
-	switch in.AgentId {
-	case 1:
-		agentName = "Load"
-	case 2:
-		agentName = "Latency"
-	case 3:
-		agentName = "Availability"
-	default:
-		agentName = "Misc"
-	}
+	agentName := getAgentName(in.AgentId)
+
 	log.Printf("Agent: %s\n", agentName)
 	for _, metric := range in.Metrics {
 		// Use the metric's timestamp and adjust for time zone. If not provided, use the current time.
@@ -98,29 +219,36 @@ func (s *server) LoadData(ctx context.Context, in *pb.Metrics) (*pb.MetricsAck, 
 
 	}
 	log.Println("=======================================")
-	if params, exists := deviceParamsMap[deviceID]; exists {
+	if params, exists := getParams(deviceID, in.AgentId); exists {
 		// Use the device parameters
-		scan = params.ScnFreq
-		transmit = params.TransMult
 		return &pb.MetricsAck{Ack: 1, ScnFreq: params.ScnFreq, TransMult: params.TransMult}, nil
 
 	} else {
-		setParams(deviceID, deviceParams{ScnFreq: scan, TransMult: transmit})
+		setParams(deviceID, in.AgentId, agentParams{ScnFreq: scan, TransMult: transmit})
 		return &pb.MetricsAck{Ack: 1, ScnFreq: scan, TransMult: transmit}, nil
 	}
 
 }
 func (s *userService) ScanParams(ctx context.Context, in *pb.UserParams) (*pb.UserParamsAck, error) {
-	// Update the scan and transmit intervals based on user input.
-	log.Printf("Received Scan Params for Device: %s", in.DeviceId)
-	log.Printf("Updated scan frequency: %d seconds", in.ScnFreq)
-	log.Printf("Updated transmit multiplier: %d", in.TransMult)
 
-	a := deviceParams{
+	writeAPI := s.influxClient.WriteAPIBlocking(s.org, s.bucket)
+
+	// Update the scan and transmit intervals based on user input.
+	agentName := getAgentName(in.AgentId)
+	log.Printf("Received Scan Params for Device: %s", in.DeviceId)
+	log.Printf("Received Agent ID: %s", agentName)
+	log.Printf("Updated scan frequency: %d miliseconds", in.ScnFreq)
+	log.Printf("Updated transmit multiplier: %d", in.TransMult)
+	params := agentParams{
 		ScnFreq:   in.ScnFreq,
 		TransMult: in.TransMult,
 	}
-	setParams(in.DeviceId, a)
+	setParams(in.DeviceId, in.AgentId, params)
+	err := storeParams(in.DeviceId, in.AgentId, params, writeAPI, ctx)
+	if err != nil {
+		log.Printf("Error writing params to InfluxDB: %v", err)
+		return &pb.UserParamsAck{Ack: 0}, nil
+	}
 	return &pb.UserParamsAck{Ack: 1}, nil
 
 }
@@ -133,21 +261,30 @@ func main() {
 		scan = int32(scanArg)
 		transmit = int32(transmitArg)
 	}
-	log.Printf("Scan frequency: %d miliseconds", scan)
-	log.Printf("Transmit multiplier: %d", transmit)
+	log.Printf("Scan frequency: %d miliseconds\n", scan)
+	log.Printf("Transmit multiplier: %d\n", transmit)
 
 	// Initialize the InfluxDB client.
 	client := influxdb2.NewClient(influxURL, influxToken)
 	defer client.Close()
 
-	// Create a new server instance with InfluxDB references.
+	// preload any existing params into memory
+	if err := loadParams(client); err != nil {
+		log.Fatalf("failed to load params from InfluxDB: %v", err)
+	}
+
+	// Create a new server instance
 	s := &server{
 		influxClient: client,
 		org:          influxOrg,
 		bucket:       influxBucket,
 	}
-
-	us := &userService{}
+	// Create a user service instance (for updating monitoring params)
+	us := &userService{
+		influxClient: client,
+		org:          influxOrg,
+		bucket:       influxBucket,
+	}
 
 	// Listen on TCP port 50051.
 	lis, err := net.Listen("tcp", ":50051")
@@ -161,10 +298,8 @@ func main() {
 	// Register the user service with the gRPC server.
 	pb.RegisterUserInputServer(grpcServer, us)
 
-	log.Printf("Server listening at %v", lis.Addr())
+	log.Printf("Server listening at %v\n", lis.Addr())
 	if err := grpcServer.Serve(lis); err != nil {
 		log.Fatalf("failed to serve: %v", err)
 	}
-	// Create a new user service instance.
-
 }

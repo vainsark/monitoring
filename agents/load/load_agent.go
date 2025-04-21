@@ -22,16 +22,16 @@ import (
 )
 
 var (
-	scnInterval      = 1000
-	TransmitInterval = 1
-	MaxMetricBuff    = 20
-	timePast         = 0
-	sendDelta        = 0
-	MetricsLen       = 9
-	ServerIP         = "localhost"
-	DiskName         = ids.StorageLinuxID
-	devID            = string(ids.DeviceId)
-	agentId          = ids.LoadID
+	scnInterval   = 2000 //scan interval in milliseconds
+	TransmitMult  = 1    // multiplier for the scan interval
+	MaxMetricBuff = 10   // max number of metrics to keep in the buffer
+	timePast      = 0
+	sendDelta     = 0
+	MetricsLen    = 9 // number of metrics per iteration
+	ServerIP      = "localhost"
+	DiskName      = ids.StorageLinuxID // name of the disk to monitor
+	devID         = ids.DeviceId
+	agentId       = ids.LoadID
 )
 
 type bytesstat struct {
@@ -64,26 +64,17 @@ type SensorResult struct {
 	senseWrite float64
 }
 
-var BytesStat bytesstat
-var DiskStats diskstat
-
-func updateOrAppendMetric(metrics []*pb.Metric, dataName string, data float64) []*pb.Metric {
+func appendMetric(metrics []*pb.Metric, dataName string, data float64) []*pb.Metric {
 	newMetric := &pb.Metric{
 		DataName:  dataName,
 		Data:      data,
 		Timestamp: timestamppb.New(t.Now()),
 	}
+	fmt.Printf("  %s: ", dataName)
+	fmt.Printf(" %.2f\n", data)
 	return append(metrics, newMetric)
 }
 
-func prtMetrics(metrics *pb.Metrics) {
-	fmt.Printf("DeviceId: %s\n", metrics.DeviceId)
-	fmt.Printf("AgentId: %d\n", metrics.AgentId)
-	for _, metric := range metrics.Metrics {
-		fmt.Printf("  %s: ", metric.DataName)
-		fmt.Printf("  Data: %.2f\n", metric.Data)
-	}
-}
 func readSensorData(filename string) (float64, float64, error) {
 	data, err := os.ReadFile(filename)
 	if err != nil {
@@ -96,7 +87,7 @@ func readSensorData(filename string) (float64, float64, error) {
 }
 
 func timetosend() bool {
-	return timePast == 0 || ((timePast-sendDelta)%(scnInterval*TransmitInterval) == 0)
+	return timePast == 0 || ((timePast-sendDelta)%(scnInterval*TransmitMult) == 0)
 }
 
 func main() {
@@ -109,7 +100,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error getting initial network IO counters: %v", err)
 	}
-	BytesStat = bytesstat{
+	BytesStat := bytesstat{
 		BytesSent: initialNet[0].BytesSent,
 		BytesRecv: initialNet[0].BytesRecv,
 	}
@@ -118,7 +109,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error getting initial disk IO counters: %v", err)
 	}
-	DiskStats = diskstat{
+	DiskStats := diskstat{
 		BytesWrite: initialDisk[DiskName].WriteBytes,
 		BytesRead:  initialDisk[DiskName].ReadBytes,
 	}
@@ -135,7 +126,6 @@ func main() {
 	metrics := &pb.Metrics{DeviceId: devID, AgentId: agentId}
 
 	for {
-
 		intervalSec := float64(scnInterval) / 1000
 
 		fmt.Printf("============= Load Scan time: %vs ==============\n", timePast/1000)
@@ -216,17 +206,13 @@ func main() {
 
 		go func() {
 			defer wg.Done()
-			filename := "../../sensoric_sim/counters.txt"
-			data, err := os.ReadFile(filename)
+			filename := "sensoric_sim/counters.txt"
+			senseRead, senseWrite, err := readSensorData(filename)
 			if err != nil {
 				log.Printf("Error reading sensor data: %v", err)
 				sensorChan <- SensorResult{}
 				return
 			}
-
-			fields := strings.Fields(string(data))
-			senseRead, _ := strconv.ParseFloat(fields[1], 64)
-			senseWrite, _ := strconv.ParseFloat(fields[3], 64)
 			sensorChan <- SensorResult{senseRead, senseWrite}
 		}()
 
@@ -238,15 +224,15 @@ func main() {
 		diskResult := <-diskChan
 		sensorResult := <-sensorChan
 
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, "CPU Usage", cpuUsage)
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, "Memory Usage", memUsage)
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, "BytesOut", netResult.kBsOut)
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, "BytesIn", netResult.kBsIn)
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, "BytesWrite", diskResult.kBsWrite)
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, "BytesRead", diskResult.kBsRead)
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, "Disk Usage", diskResult.diskUsage)
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, "Sensoric Read", sensorResult.senseRead)
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, "Sensoric Write", sensorResult.senseWrite)
+		metrics.Metrics = appendMetric(metrics.Metrics, "CPU Usage", cpuUsage)
+		metrics.Metrics = appendMetric(metrics.Metrics, "Memory Usage", memUsage)
+		metrics.Metrics = appendMetric(metrics.Metrics, "BytesOut", netResult.kBsOut)
+		metrics.Metrics = appendMetric(metrics.Metrics, "BytesIn", netResult.kBsIn)
+		metrics.Metrics = appendMetric(metrics.Metrics, "BytesWrite", diskResult.kBsWrite)
+		metrics.Metrics = appendMetric(metrics.Metrics, "BytesRead", diskResult.kBsRead)
+		metrics.Metrics = appendMetric(metrics.Metrics, "Disk Usage", diskResult.diskUsage)
+		metrics.Metrics = appendMetric(metrics.Metrics, "Sensoric Read", sensorResult.senseRead)
+		metrics.Metrics = appendMetric(metrics.Metrics, "Sensoric Write", sensorResult.senseWrite)
 
 		BytesStat.BytesSent = netResult.newSent
 		BytesStat.BytesRecv = netResult.newRecv
@@ -256,7 +242,7 @@ func main() {
 		if len(metrics.Metrics) > MetricsLen*MaxMetricBuff {
 			metrics.Metrics = metrics.Metrics[MetricsLen:]
 		}
-		prtMetrics(metrics)
+
 		if timetosend() {
 			// Save current batch in a local variable.
 			m := metrics
@@ -270,7 +256,7 @@ func main() {
 					log.Printf("Error while asynchronously sending data: %v", err)
 				} else {
 					log.Printf("Asynchronous response: %v", resp)
-					TransmitInterval = int(resp.TransMult)
+					TransmitMult = int(resp.TransMult)
 					newScnInterval := int(resp.ScnFreq)
 					if scnInterval != newScnInterval {
 						scnInterval = newScnInterval

@@ -23,19 +23,22 @@ func main() {
 	// Set the server IP address from command line argument or use default
 	if len(os.Args) > 1 {
 		arg := 1
-		if len(os.Args) < 4 {
+		if len(os.Args) > 5 {
 			ServerIP = os.Args[arg]
 		} else {
 			arg = 0
 		}
 		Params.DeviceId = os.Args[arg+1]
-		freq, _ := strconv.Atoi(os.Args[arg+2])
-		mult, _ := strconv.Atoi(os.Args[arg+3])
+		agent, _ := strconv.Atoi(os.Args[arg+2])
+		freq, _ := strconv.Atoi(os.Args[arg+3])
+		mult, _ := strconv.Atoi(os.Args[arg+4])
+		Params.AgentId = int32(agent)
 		Params.ScnFreq = int32(freq)
 		Params.TransMult = int32(mult)
+
 	}
 	log.Printf("Server IP: %s:50051\n", ServerIP)
-	log.Printf("Device ID: \"%s\"\n		    Scan Frequency: %dms\n		    Transmit Multiplier: %d\n", Params.DeviceId, Params.ScnFreq, Params.TransMult)
+	log.Printf("Device ID: \"%s\"\n		AgentID: 	%d\n	    Scan Frequency: %dms\n		    Transmit Multiplier: %d\n", Params.DeviceId, Params.AgentId, Params.ScnFreq, Params.TransMult)
 
 	// Connect to the server
 	// Initialize the gRPC connection

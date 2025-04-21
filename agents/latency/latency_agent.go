@@ -22,20 +22,20 @@ import (
 
 const (
 	numAccesses    = 1000000
-	arraySizeBytes = 1024 * 1024 // 1MB buffer
+	arraySizeBytes = 1024 * 1024 // 1MB of memory
 )
 
 var (
-	scnInterval      = 2000
-	TransmitInterval = 1
-	MaxMetricBuff    = 10
-	timePast         = 0
-	sendDelta        = 0
-	MetricsLen       = 9
-	ServerIP         = "localhost"
-	DiskName         = ids.StorageLinuxID
-	devID            = ids.DeviceId
-	agentId          = ids.LoadID
+	scnInterval   = 2000 //scan interval in milliseconds
+	TransmitMult  = 1    // multiplier for the scan interval
+	MaxMetricBuff = 10   // max number of metrics to keep in the buffer
+	timePast      = 0
+	sendDelta     = 0
+	MetricsLen    = 9 // number of metrics per iteration
+	ServerIP      = "localhost"
+	DiskName      = ids.StorageLinuxID // name of the disk to monitor
+	devID         = ids.DeviceId
+	agentId       = ids.LatencyID
 )
 
 type DiskResult struct {
@@ -43,25 +43,34 @@ type DiskResult struct {
 	w_wait float64
 }
 
-func prtMetrics(metrics *pb.Metrics) {
-	fmt.Printf("DeviceId: %s\n", metrics.DeviceId)
-	fmt.Printf("AgentId: %d\n", metrics.AgentId)
-	for _, metric := range metrics.Metrics {
-		fmt.Printf("  %s: ", metric.DataName)
-		fmt.Printf(" %.2f\n", metric.Data)
+func getDefIP() string {
+	/*	Returns the default IP address of the system. */
+	cmd := exec.Command("bash", "-c", "ip route | grep default")
+	output, err := cmd.Output()
+	if err != nil {
+		log.Fatalf("Error running command: %v", err)
 	}
+	fields := strings.Fields(string(output))
+	defaultIP := fields[2]
+	fmt.Println("Default IP:", defaultIP)
+	return defaultIP
 }
-func updateOrAppendMetric(metrics []*pb.Metric, dataName string, data float64) []*pb.Metric {
-	// Append a new metric to the metrics slice
+func appendMetric(metrics []*pb.Metric, dataName string, data float64) []*pb.Metric {
+	/*	Appends a new metric to the metrics slice.
+		Prints the metric name and value. */
+
 	newMetric := &pb.Metric{
 		DataName:  dataName,
 		Data:      data,
 		Timestamp: timestamppb.New(t.Now()),
 	}
+	fmt.Printf("  %s: ", dataName)
+	fmt.Printf(" %.2f\n", data)
 	return append(metrics, newMetric)
 }
-
 func measureMemoryLatency() t.Duration {
+	/*	Simulates multiple random access to an array and measures the time taken for each access.
+		Returns the average latency.*/
 
 	numElements := arraySizeBytes / 4
 	buffer := make([]int32, numElements)
@@ -72,13 +81,10 @@ func measureMemoryLatency() t.Duration {
 	var total t.Duration
 	for i := 0; i < numAccesses; i++ {
 		index := rand.Intn(numElements)
-		// Start timing
 		start := t.Now()
-
 		// Read access
 		value := buffer[index]
 		_ = value // prevent "value is never used" wining
-
 		// End timing
 		elapsed := t.Since(start)
 		total += elapsed
@@ -87,9 +93,8 @@ func measureMemoryLatency() t.Duration {
 	avg := total / numAccesses
 	return avg
 }
-
 func simulSenseLatency() t.Duration {
-	// simulate reading 64bit from sensor register with I2C at 400 kHz
+	/*	simulate reading 64bit from sensor register with I2C at 400 kHz	*/
 	minRT := 250 * t.Microsecond
 
 	deviation := rand.NormFloat64() * 50
@@ -101,19 +106,11 @@ func simulSenseLatency() t.Duration {
 	return minRT + devTime
 }
 func timetosend() bool {
-	return timePast == 0 || ((timePast-sendDelta)%(scnInterval*TransmitInterval) == 0)
+	return timePast == 0 || ((timePast-sendDelta)%(scnInterval*TransmitMult) == 0)
 }
 func main() {
 	// Getting the default IP address
-	cmd := exec.Command("bash", "-c", "ip route | grep default")
-	output, err := cmd.Output()
-	if err != nil {
-		log.Fatalf("Error running command: %v", err)
-	}
-	fields := strings.Fields(string(output))
-	defaultIP := fields[2]
-	fmt.Println("Default IP:", defaultIP)
-	//=======================================================
+	defaultIP := getDefIP()
 
 	if len(os.Args) > 1 {
 		ServerIP = os.Args[1]
@@ -135,7 +132,7 @@ func main() {
 
 	for {
 		// MAIN LOOP
-		fmt.Printf("============= Latency Scan time: %ds ==============\n", timePast)
+		fmt.Printf("============= Latency Scan time: %ds ==============\n", timePast/1000)
 		start_time := t.Now()
 
 		var wg sync.WaitGroup
@@ -163,8 +160,6 @@ func main() {
 			fields := strings.Fields(outputStr)
 			r_wait, _ := strconv.ParseFloat(fields[6], 64)
 			w_wait, _ := strconv.ParseFloat(fields[7], 64)
-			fmt.Printf("Raw string for read: %s\n", fields[6])
-			fmt.Printf("Raw string for write: %s\n", fields[7])
 			diskchan <- DiskResult{r_wait: r_wait, w_wait: w_wait}
 		}()
 		//============================= Network Statistics =============================
@@ -187,7 +182,7 @@ func main() {
 			}
 			// Get the results of the pings
 			stats := pinger.Statistics()
-			AvgRtt := float64(t.Duration(stats.AvgRtt).Microseconds()) / 1000
+			AvgRtt := float64(t.Duration(stats.AvgRtt).Microseconds()) / 1000 // Convert to milliseconds
 			netChan <- AvgRtt
 		}()
 		//============================= Sensoric Latency =============================
@@ -205,11 +200,11 @@ func main() {
 		AvgRtt := <-netChan
 		senseRT := <-sensorChan
 		//=======================================================
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, "Memory Latency", float64(latency))
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, "read wait", diskResult.r_wait)
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, "write wait", diskResult.w_wait)
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, "NetInterLaten", AvgRtt)
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, "Sensor Latency", float64(senseRT)/1000)
+		metrics.Metrics = appendMetric(metrics.Metrics, "Memory Latency", float64(latency))
+		metrics.Metrics = appendMetric(metrics.Metrics, "read wait", diskResult.r_wait)
+		metrics.Metrics = appendMetric(metrics.Metrics, "write wait", diskResult.w_wait)
+		metrics.Metrics = appendMetric(metrics.Metrics, "NetInterLaten", AvgRtt)
+		metrics.Metrics = appendMetric(metrics.Metrics, "Sensor Latency", float64(senseRT)/1000)
 		//==========================================================================
 		// Print the metrics buffer length and trim if necessary
 		fmt.Printf("metrics length: %v\n", len(metrics.Metrics))
@@ -218,10 +213,8 @@ func main() {
 			metrics.Metrics = metrics.Metrics[MetricsLen:] // Trim the oldest metrics
 		}
 		//================================= Sending Data =================================
-		prtMetrics(metrics)
 		if timetosend() {
 			// Save current batch in a local variable.
-
 			m := metrics
 			metrics = &pb.Metrics{DeviceId: devID, AgentId: agentId} // new metrics.
 			// Send the data to the server
@@ -234,7 +227,7 @@ func main() {
 					log.Printf("Error while asynchronously sending data: %v", err)
 				} else {
 					log.Printf("Asynchronous response: %v", resp)
-					TransmitInterval = int(resp.TransMult)
+					TransmitMult = int(resp.TransMult)
 					newScnInterval := int(resp.ScnFreq)
 					if scnInterval != newScnInterval {
 						scnInterval = newScnInterval

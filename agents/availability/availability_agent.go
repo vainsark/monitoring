@@ -21,15 +21,15 @@ import (
 )
 
 var (
-	scnInterval      = 2000
-	TransmitInterval = 1
-	MaxMetricBuff    = 10
-	timePast         = 0
-	sendDelta        = 0
-	MetricsLen       = 9
-	ServerIP         = "localhost"
-	devID            = ids.DeviceId
-	agentId          = ids.AvailabilityID
+	scnInterval   = 2000 //scan interval in milliseconds
+	TransmitMult  = 1    // multiplier for the scan interval
+	MaxMetricBuff = 10   // max number of metrics to keep in the buffer
+	timePast      = 0
+	sendDelta     = 0
+	MetricsLen    = 9 // number of metrics per iteration
+	ServerIP      = "localhost"
+	devID         = ids.DeviceId
+	agentId       = ids.AvailabilityID
 )
 
 type dropstats struct {
@@ -43,26 +43,20 @@ type memstats struct {
 	swapsMB float64
 }
 
-func prtMetrics(metrics *pb.Metrics) {
-	fmt.Printf("DeviceId: %s\n", metrics.DeviceId)
-	fmt.Printf("AgentId: %d\n", metrics.AgentId)
-	for _, metric := range metrics.Metrics {
-		fmt.Printf("  %s: ", metric.DataName)
-		fmt.Printf("  Data: %.2f\n", metric.Data)
-	}
-}
-func updateOrAppendMetric(metrics []*pb.Metric, dataName string, data float64) []*pb.Metric {
+func appendMetric(metrics []*pb.Metric, dataName string, data float64) []*pb.Metric {
 	// Append a new metric to the metrics slice
 	newMetric := &pb.Metric{
 		DataName:  dataName,
 		Data:      data,
 		Timestamp: timestamppb.New(t.Now()),
 	}
+	fmt.Printf("  %s: ", dataName)
+	fmt.Printf(" %.2f\n", data)
 	return append(metrics, newMetric)
 }
 func timetosend() bool {
 	// Calculate the time since the last send and corrects for correct modulus
-	return timePast == 0 || ((timePast-sendDelta)%(scnInterval*TransmitInterval) == 0)
+	return timePast == 0 || ((timePast-sendDelta)%(scnInterval*TransmitMult) == 0)
 }
 func main() {
 	// Set the server IP address from command line argument or use default
@@ -164,29 +158,27 @@ func main() {
 		}(prevDropStats)
 
 		wg.Wait()
-
+		//==========================================================================
 		idle_percent := <-cpuChan
 		swapStat := <-memChan
 		deltadrops := <-netChan
 
-		//==========================================================================
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, "Idle Percent", idle_percent)
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, "Memory Swaps", swapStat.swaps)
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, "Memory Swaps MB", float64(swapStat.swapsMB))
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, "DropsIn", float64(deltadrops.dropins))
-		metrics.Metrics = updateOrAppendMetric(metrics.Metrics, "DropsOut", float64(deltadrops.dropouts))
+		metrics.Metrics = appendMetric(metrics.Metrics, "Idle Percent", idle_percent)
+		metrics.Metrics = appendMetric(metrics.Metrics, "Memory Swaps", swapStat.swaps)
+		metrics.Metrics = appendMetric(metrics.Metrics, "Memory Swaps MB", float64(swapStat.swapsMB))
+		metrics.Metrics = appendMetric(metrics.Metrics, "DropsIn", float64(deltadrops.dropins))
+		metrics.Metrics = appendMetric(metrics.Metrics, "DropsOut", float64(deltadrops.dropouts))
 
 		DropStats.dropins = deltadrops.dropins
 		DropStats.dropouts = deltadrops.dropouts
+		//==========================================================================
 
-		// Print the metrics buffer length and trim if necessary
-		fmt.Printf("metrics length: %v\n", len(metrics.Metrics))
 		if len(metrics.Metrics) > MetricsLen*MaxMetricBuff {
 			fmt.Printf("Trimming oldest metrics...\n")
 			metrics.Metrics = metrics.Metrics[MetricsLen:] // Trim the oldest metrics
 		}
 		//================================= Sending Data =================================
-		prtMetrics(metrics)
+
 		if timetosend() {
 			// Save current batch in a local variable.
 			m := metrics
@@ -200,11 +192,11 @@ func main() {
 					log.Printf("Error while asynchronously sending data: %v", err)
 				} else {
 					log.Printf("Asynchronous response: %v", resp)
-					TransmitInterval = int(resp.TransMult)
+					TransmitMult = int(resp.TransMult)
 					newScnInterval := int(resp.ScnFreq)
 					if scnInterval != newScnInterval {
 						scnInterval = newScnInterval
-						sendDelta = timePast % scnInterval
+						sendDelta = timePast % scnInterval //
 					}
 				}
 				stop_time := t.Since(start)

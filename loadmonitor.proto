@@ -33,8 +33,9 @@ message MetricsAck {
 
 message UserParams {
     string DeviceId = 1;
-    int32 ScnFreq = 2;
-    int32 TransMult = 3;
+    int32 AgentId = 2;
+    int32 ScnFreq = 3;
+    int32 TransMult = 4;
 }
 message UserParamsAck {
     int32 Ack = 1;
