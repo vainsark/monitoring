@@ -11,24 +11,18 @@ import (
 
 	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
 	"github.com/influxdata/influxdb-client-go/v2/api"
+	"github.com/vainsark/monitoring/agents/ids"
 	pb "github.com/vainsark/monitoring/loadmonitor_proto"
 	"google.golang.org/grpc"
 )
 
 const (
 	// InfluxDB client configuration
-	// influxURL          = ids.InfluxURL
-	// influxToken        = ids.InfluxToken
-	// influxOrg          = ids.InfluxOrg
-	// influxBucket       = ids.InfluxBucket
-	influxURL   = "http://localhost:8086"
-	influxToken = "dvKsoUSbn-7vW04bNFdZeL87TNissgRP43i_ttrg-Vx3LdkzKJHucylmomEasS9an7lGv_TyZRj6-dHINMjXVA=="
-	// influxToken  = "Ib2fq58MyBy2OUR9Aa3Lv2BN1uNBYnwMTsx4pyOSDzqoLZF6qKMTnfsB7hRO0_aFwxEOUPtbt3NUmyvs8RyhCw==" // Laptop
-	influxOrg         = "vainsark"
-	influxBucket      = "metrics"
-	configMeasurement = "device_params"
-	// fixedTimestamp lets each write overwrite the prior one
-	// fixedTimestampSec = int64(0)
+	influxURL     = ids.InfluxURL
+	influxToken   = ids.InfluxToken
+	influxOrg     = ids.InfluxOrg
+	influxBucket  = ids.InfluxBucket
+	MonitorConfig = "device_params"
 )
 
 var (
@@ -85,7 +79,7 @@ func getAgentID(agentID string) int32 {
 
 func storeParams(deviceID string, agentID int32, p agentParams, w api.WriteAPIBlocking, ctx context.Context) error {
 	entry := influxdb2.NewPoint(
-		configMeasurement,
+		MonitorConfig,
 		map[string]string{
 			"deviceId": deviceID,
 			"agentId":  getAgentName(agentID),
@@ -94,7 +88,8 @@ func storeParams(deviceID string, agentID int32, p agentParams, w api.WriteAPIBl
 			"ScnFreq":   p.ScnFreq,
 			"TransMult": p.TransMult,
 		},
-		t.Unix(0, 0), // always the same moment
+		// 0 timestamp to update the entry instead of creating a new one
+		t.Unix(0, 0),
 	)
 	return w.WritePoint(ctx, entry)
 }
@@ -105,7 +100,7 @@ func loadParams(client influxdb2.Client) error {
 		|> range(start:0)
 		|> filter(fn: (r) => r._measurement == "%s" 
 		and (r._field == "ScnFreq" or r._field == "TransMult"))`,
-		influxBucket, configMeasurement)
+		influxBucket, MonitorConfig)
 
 	queryAPI := client.QueryAPI(influxOrg)
 	result, err := queryAPI.Query(context.Background(), flux)
