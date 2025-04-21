@@ -33,7 +33,7 @@ var (
 	sendDelta     = 0
 	MetricsLen    = 9 // number of metrics per iteration
 	ServerIP      = "localhost"
-	DiskName      = ids.StorageLinuxID // name of the disk to monitor
+	DiskName      = ids.StorageID // name of the disk to monitor
 	devID         = ids.DeviceId
 	agentId       = ids.LatencyID
 )

@@ -14,8 +14,8 @@ const (
 	NetworkID  = 4
 	SensoricID = 5
 
-	StorageLinuxID = "sda"     // Linux (generic, can be changed based on the system
-	StorageRaspID  = "mmcblk0" // Raspberry Pi (generic, can be changed based on the system
+	StorageID = "sda" // Linux (generic, can be changed based on the system
+	// StorageID = "mmcblk0" // Raspberry Pi (generic, can be changed based on the system
 
 	InfluxURL   = "http://localhost:8086"
 	InfluxToken = "dvKsoUSbn-7vW04bNFdZeL87TNissgRP43i_ttrg-Vx3LdkzKJHucylmomEasS9an7lGv_TyZRj6-dHINMjXVA=="
