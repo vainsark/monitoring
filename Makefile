@@ -6,7 +6,7 @@
 
 # go run agents/latency/latency_agent.go
 
-.PHONY: docker-up server-run load-run latency-run availability-run stress_cpu stress_disk stress_mem stress_mem_lat
+.PHONY: docker-up run-all server-run load-run latency-run availability-run stress_cpu stress_disk stress_mem stress_mem_lat
 
 docker-up:
 	cd docker && docker-compose up -d
@@ -23,6 +23,11 @@ latency-run:
 availability-run:
 	go run agents/availability/availability_agent.go $(ARGS)
 	
+run-all:
+	go run agents/load/load_agent.go $(ARGS) & \
+	sudo /usr/local/go/bin/go run agents/latency/latency_agent.go $(ARGS) & \
+	go run agents/availability/availability_agent.go $(ARGS) & \
+
 sensor-sim-run:
 	go run sensoric_sim/TrafficSim.go 
 	

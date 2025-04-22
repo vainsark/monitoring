@@ -6,8 +6,8 @@ const (
 	AvailabilityID int32 = 3
 
 	DeviceId = "VM"
-	// DeviceId   = "Raspberry Pi 5"
-	// DeviceId   = "Raspberry Pi 2"
+	// DeviceId   = "Raspberry_Pi_5"
+	// DeviceId   = "Raspberry_Pi_2"
 	CPUID      = 1
 	MemoryID   = 2
 	DiskID     = 3
