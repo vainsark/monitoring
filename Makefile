@@ -12,21 +12,21 @@ docker-up:
 	cd docker && docker-compose up -d
 
 server-run:
-	go run server/server.go $(ARGS)
+	go run server/server.go $(scan) $(mult)
 
 load-run:
-	go run agents/load/load_agent.go $(ARGS)
+	go run agents/load/load_agent.go $(server)
 
 latency-run:
-	sudo /usr/local/go/bin/go run agents/latency/latency_agent.go $(ARGS)
+	sudo /usr/local/go/bin/go run agents/latency/latency_agent.go $(server)
 
 availability-run:
-	go run agents/availability/availability_agent.go $(ARGS)
+	go run agents/availability/availability_agent.go $(server)
 	
 run-all:
-	go run agents/load/load_agent.go $(ARGS) & \
-	sudo /usr/local/go/bin/go run agents/latency/latency_agent.go $(ARGS) & \
-	go run agents/availability/availability_agent.go $(ARGS) & \
+	go run agents/load/load_agent.go $(server) & \
+	sudo /usr/local/go/bin/go run agents/latency/latency_agent.go $(server) & \
+	go run agents/availability/availability_agent.go $(server) & \
 
 sensor-sim-run:
 	go run sensoric_sim/TrafficSim.go 

@@ -7,12 +7,12 @@ import (
 	"math/rand"
 	"os"
 	"os/exec"
-	"strconv"
 	"strings"
 	"sync"
 	t "time"
 
 	"github.com/go-ping/ping"
+	"github.com/shirou/gopsutil/disk"
 	"github.com/vainsark/monitoring/agents/ids"
 	pb "github.com/vainsark/monitoring/loadmonitor_proto"
 	"google.golang.org/grpc"
@@ -41,6 +41,12 @@ var (
 type DiskResult struct {
 	r_wait float64
 	w_wait float64
+}
+type prevDiskStat struct {
+	ReadCount  uint64
+	ReadTime   uint64
+	WriteCount uint64
+	WriteTime  uint64
 }
 
 func getDefIP() string {
@@ -130,6 +136,16 @@ func main() {
 	// Set the device ID and agent ID
 	metrics := &pb.Metrics{DeviceId: devID, AgentId: agentId}
 
+	initial, err := disk.IOCounters(DiskName)
+	if err != nil {
+		log.Fatalf("Error getting initial disk IO counters: %v", err)
+	}
+	DiskStats := prevDiskStat{
+		ReadCount:  initial[DiskName].ReadCount,
+		ReadTime:   initial[DiskName].ReadTime,
+		WriteCount: initial[DiskName].WriteCount,
+		WriteTime:  initial[DiskName].WriteTime,
+	}
 	for {
 		// MAIN LOOP
 		fmt.Printf("============= Latency Scan time: %ds ==============\n", timePast/1000)
@@ -139,7 +155,8 @@ func main() {
 		wg.Add(4) // Number of goroutines to wait for
 		// cpuChan := make(chan float64, 1)
 		memChan := make(chan t.Duration, 1)
-		diskchan := make(chan DiskResult, 1)
+		// diskchan := make(chan DiskResult, 1)
+		diskchan2 := make(chan DiskResult, 1)
 		netChan := make(chan float64, 1)
 		sensorChan := make(chan t.Duration, 1)
 		//============================= Memory Latency =============================
@@ -149,19 +166,53 @@ func main() {
 			memChan <- latency
 		}()
 		//============================= Storage (IOSTAT) =============================
-		go func() {
+		// go func() {
+		// 	defer wg.Done()
+		// 	cmd := exec.Command("bash", "-c", "iostat -dx "+DiskName+" 1 2| awk 'NR>2 {print $6, $12}'")
+		// 	output, err := cmd.Output()
+		// 	if err != nil {
+		// 		log.Fatalf("Error running iostat command: %v", err)
+		// 	}
+		// 	outputStr := string(output)
+		// 	fields := strings.Fields(outputStr)
+		// 	r_wait, _ := strconv.ParseFloat(fields[6], 64)
+		// 	w_wait, _ := strconv.ParseFloat(fields[7], 64)
+		// 	diskchan <- DiskResult{r_wait: r_wait, w_wait: w_wait}
+		// }()
+
+		prevDiskStats := DiskStats
+		go func(prev prevDiskStat) {
 			defer wg.Done()
-			cmd := exec.Command("bash", "-c", "iostat -dx "+DiskName+" 1 2| awk 'NR>2 {print $6, $12}'")
-			output, err := cmd.Output()
+
+			stats, err := disk.IOCounters(DiskName)
 			if err != nil {
-				log.Fatalf("Error running iostat command: %v", err)
+				log.Printf("Error getting disk IO counters: %v", err)
+				diskchan2 <- DiskResult{}
+				return
 			}
-			outputStr := string(output)
-			fields := strings.Fields(outputStr)
-			r_wait, _ := strconv.ParseFloat(fields[6], 64)
-			w_wait, _ := strconv.ParseFloat(fields[7], 64)
-			diskchan <- DiskResult{r_wait: r_wait, w_wait: w_wait}
-		}()
+			curr := stats[DiskName]
+
+			// compute deltas
+			readCountDelta := curr.ReadCount - prevDiskStats.ReadCount
+			readTimeDelta := curr.ReadTime - prevDiskStats.ReadTime
+			writeCountDelta := curr.WriteCount - prevDiskStats.WriteCount
+			writeTimeDelta := curr.WriteTime - prevDiskStats.WriteTime
+
+			// compute waits
+			var rAwait, wAwait float64
+			if readCountDelta > 0 {
+				rAwait = float64(readTimeDelta) / float64(readCountDelta)
+			}
+			if writeCountDelta > 0 {
+				wAwait = float64(writeTimeDelta) / float64(writeCountDelta)
+			}
+			DiskStats.ReadCount = stats[DiskName].ReadCount
+			DiskStats.ReadTime = stats[DiskName].ReadTime
+			DiskStats.WriteCount = stats[DiskName].WriteCount
+			DiskStats.WriteTime = stats[DiskName].WriteTime
+
+			diskchan2 <- DiskResult{r_wait: rAwait, w_wait: wAwait}
+		}(prevDiskStats)
 		//============================= Network Statistics =============================
 		go func() {
 			defer wg.Done()
@@ -196,14 +247,17 @@ func main() {
 		wg.Wait()
 		// Close the channels
 		latency := <-memChan
-		diskResult := <-diskchan
+		// diskResult := <-diskchan
+		diskResult2 := <-diskchan2
 		AvgRtt := <-netChan
 		senseRT := <-sensorChan
 		//=======================================================
 		metrics.Metrics = appendMetric(metrics.Metrics, "Memory Latency", float64(latency))
-		metrics.Metrics = appendMetric(metrics.Metrics, "read wait", diskResult.r_wait)
-		metrics.Metrics = appendMetric(metrics.Metrics, "write wait", diskResult.w_wait)
+		// metrics.Metrics = appendMetric(metrics.Metrics, "read wait", diskResult.r_wait)
+		// metrics.Metrics = appendMetric(metrics.Metrics, "write wait", diskResult.w_wait)
 		metrics.Metrics = appendMetric(metrics.Metrics, "NetInterLaten", AvgRtt)
+		metrics.Metrics = appendMetric(metrics.Metrics, "read wait", diskResult2.r_wait)
+		metrics.Metrics = appendMetric(metrics.Metrics, "write wait", diskResult2.w_wait)
 		metrics.Metrics = appendMetric(metrics.Metrics, "Sensor Latency", float64(senseRT)/1000)
 		//==========================================================================
 		// Print the metrics buffer length and trim if necessary

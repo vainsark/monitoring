@@ -120,15 +120,13 @@ func loadParams(client influxdb2.Client) error {
 		field := rec.Field()                            // "ScnFreq" or "TransMult"
 		val := int32(rec.Value().(int64))               // the numeric value
 
-		// 1) Make sure the inner map exists
+		// Make sure the inner map exists
 		if _, ok := temp[devID]; !ok {
 			temp[devID] = make(map[int32]agentParams)
 		}
-
-		// 2) Pull out the in‑progress struct (zero‑value if first time)
+		// Pull out the in‑progress struct (zero‑value if first time)
 		ap := temp[devID][agentId]
-
-		// 3) Fill in whichever field this row represents
+		// Fill in whichever field this row represents
 		switch field {
 		case "ScnFreq":
 			ap.ScnFreq = int32(val)
@@ -136,14 +134,13 @@ func loadParams(client influxdb2.Client) error {
 			ap.TransMult = int32(val)
 		}
 
-		// 4) Write it back into the temp map
+		// Write it back into the temp map
 		temp[devID][agentId] = ap
 	}
 	if result.Err() != nil {
 		return result.Err()
 	}
-
-	// 5) Now that each agentParams is fully populated, call setParams:
+	// Now that each agentParams is fully populated, call setParams:
 	for devID, agents := range temp {
 		for agentName, ap := range agents {
 			setParams(devID, agentName, ap)
