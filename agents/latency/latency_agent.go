@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"log"
@@ -74,6 +76,52 @@ func appendMetric(metrics []*pb.Metric, dataName string, data float64) []*pb.Met
 	fmt.Printf(" %.2f\n", data)
 	return append(metrics, newMetric)
 }
+
+func MeasureCPUAvg() (float64, error) {
+	cmdLine := "sudo cyclictest -t 0 -i 1000 -p 99 -l 100 -q"
+	cmd := exec.Command("bash", "-c", cmdLine)
+
+	// run and capture everything
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		// log the full output for debugging
+		log.Printf("cyclictest failed: %v\noutput:\n%s", err, out)
+		return 0, fmt.Errorf("cyclictest exit: %w", err)
+	}
+
+	var sum, count int
+	scanner := bufio.NewScanner(bytes.NewReader(out))
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "T:") {
+			continue
+		}
+		// T: 0 (15497) P:99 I:1000 C:1000 Min:16 Act:20 Avg:23 Max:81
+		var (
+			thread, pid, pri, interval, loops, min, act, avg, max int
+		)
+		// pull out all ints in one go
+		if _, err := fmt.Sscanf(
+			line,
+			"T: %d (%d) P:%d I:%d C:%d Min:%d Act:%d Avg:%d Max:%d",
+			&thread, &pid, &pri, &interval, &loops,
+			&min, &act, &avg, &max,
+		); err != nil {
+			log.Printf("failed to parse line %q: %v", line, err)
+			continue
+		}
+		sum += avg
+		count++
+	}
+	if err := scanner.Err(); err != nil {
+		return 0, fmt.Errorf("scanner error: %w", err)
+	}
+	if count == 0 {
+		return 0, fmt.Errorf("no data lines parsed from cyclictest output")
+	}
+	return float64(sum) / float64(count), nil
+}
+
 func measureMemoryLatency() t.Duration {
 	/*	Simulates multiple random access to an array and measures the time taken for each access.
 		Returns the average latency.*/
@@ -103,7 +151,7 @@ func simulSenseLatency() t.Duration {
 	/*	simulate reading 64bit from sensor register with I2C at 400 kHz	*/
 	minRT := 250 * t.Microsecond
 
-	deviation := rand.NormFloat64() * 50
+	deviation := rand.NormFloat64() * 30
 	if deviation < 0 {
 		deviation = -deviation
 	}
@@ -152,34 +200,32 @@ func main() {
 		start_time := t.Now()
 
 		var wg sync.WaitGroup
-		wg.Add(4) // Number of goroutines to wait for
-		// cpuChan := make(chan float64, 1)
+		wg.Add(5) // Number of goroutines to wait for
+		cpuChan := make(chan float64, 1)
 		memChan := make(chan t.Duration, 1)
 		// diskchan := make(chan DiskResult, 1)
 		diskchan2 := make(chan DiskResult, 1)
 		netChan := make(chan float64, 1)
 		sensorChan := make(chan t.Duration, 1)
+		//============================= CPU Latency =============================
+		go func() {
+			defer wg.Done()
+			avg, err := MeasureCPUAvg()
+			if err != nil {
+				log.Printf("cyclictest error: %v", err)
+				cpuChan <- 0
+				return
+			}
+			fmt.Printf("Cyclictest average: %.2f\n", avg)
+			cpuChan <- avg
+		}()
 		//============================= Memory Latency =============================
 		go func() {
 			defer wg.Done()
 			latency := measureMemoryLatency()
 			memChan <- latency
 		}()
-		//============================= Storage (IOSTAT) =============================
-		// go func() {
-		// 	defer wg.Done()
-		// 	cmd := exec.Command("bash", "-c", "iostat -dx "+DiskName+" 1 2| awk 'NR>2 {print $6, $12}'")
-		// 	output, err := cmd.Output()
-		// 	if err != nil {
-		// 		log.Fatalf("Error running iostat command: %v", err)
-		// 	}
-		// 	outputStr := string(output)
-		// 	fields := strings.Fields(outputStr)
-		// 	r_wait, _ := strconv.ParseFloat(fields[6], 64)
-		// 	w_wait, _ := strconv.ParseFloat(fields[7], 64)
-		// 	diskchan <- DiskResult{r_wait: r_wait, w_wait: w_wait}
-		// }()
-
+		//============================= Storage Latency =============================
 		prevDiskStats := DiskStats
 		go func(prev prevDiskStat) {
 			defer wg.Done()
@@ -246,12 +292,14 @@ func main() {
 		// Wait for all goroutines to finish
 		wg.Wait()
 		// Close the channels
+		cpuAvg := <-cpuChan
 		latency := <-memChan
 		// diskResult := <-diskchan
 		diskResult2 := <-diskchan2
 		AvgRtt := <-netChan
 		senseRT := <-sensorChan
 		//=======================================================
+		metrics.Metrics = appendMetric(metrics.Metrics, "CPU Latency", cpuAvg)
 		metrics.Metrics = appendMetric(metrics.Metrics, "Memory Latency", float64(latency))
 		// metrics.Metrics = appendMetric(metrics.Metrics, "read wait", diskResult.r_wait)
 		// metrics.Metrics = appendMetric(metrics.Metrics, "write wait", diskResult.w_wait)
