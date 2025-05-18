@@ -33,8 +33,8 @@ var (
 	MaxMetricBuff = 10   // max number of metrics to keep in the buffer
 	timePast      = 0
 	sendDelta     = 0
-	MetricsLen    = 9 // number of metrics per iteration
-	ServerIP      = "localhost"
+	MetricsLen    = 9             // number of metrics per iteration
+	ServerIP      = ids.ServerIP  // default server IP
 	DiskName      = ids.StorageID // name of the disk to monitor
 	devID         = ids.DeviceId
 	agentId       = ids.LatencyID
@@ -93,14 +93,15 @@ func MeasureCPUAvg() (float64, error) {
 	scanner := bufio.NewScanner(bytes.NewReader(out))
 	for scanner.Scan() {
 		line := scanner.Text()
+
 		if !strings.HasPrefix(line, "T:") {
+			// skip lines that are not results"
 			continue
 		}
-		// T: 0 (15497) P:99 I:1000 C:1000 Min:16 Act:20 Avg:23 Max:81
 		var (
 			thread, pid, pri, interval, loops, min, act, avg, max int
 		)
-		// pull out all ints in one go
+		// pull out all values from the result line
 		if _, err := fmt.Sscanf(
 			line,
 			"T: %d (%d) P:%d I:%d C:%d Min:%d Act:%d Avg:%d Max:%d",

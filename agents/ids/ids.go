@@ -8,6 +8,9 @@ const (
 	DeviceId = "VM"
 	// DeviceId   = "Raspberry_Pi_5"
 	// DeviceId   = "Raspberry_Pi_2"
+
+	ServerIP = "localhost"
+
 	CPUID      = 1
 	MemoryID   = 2
 	DiskID     = 3

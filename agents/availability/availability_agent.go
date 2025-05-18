@@ -5,12 +5,10 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/exec"
-	"strconv"
-	"strings"
 	"sync"
 	t "time"
 
+	"github.com/shirou/gopsutil/cpu"
 	"github.com/shirou/gopsutil/net"
 	"github.com/shirou/gopsutil/v4/mem"
 	"github.com/vainsark/monitoring/agents/ids"
@@ -26,8 +24,8 @@ var (
 	MaxMetricBuff = 10   // max number of metrics to keep in the buffer
 	timePast      = 0
 	sendDelta     = 0
-	MetricsLen    = 9 // number of metrics per iteration
-	ServerIP      = "localhost"
+	MetricsLen    = 9            // number of metrics per iteration
+	ServerIP      = ids.ServerIP // default server IP
 	devID         = ids.DeviceId
 	agentId       = ids.AvailabilityID
 )
@@ -43,6 +41,11 @@ type memstats struct {
 	swapsMB float64
 }
 
+func sumAll(t cpu.TimesStat) float64 {
+	return t.User + t.System + t.Idle +
+		t.Nice + t.Iowait + t.Irq +
+		t.Softirq + t.Steal + t.Guest + t.GuestNice
+}
 func appendMetric(metrics []*pb.Metric, dataName string, data float64) []*pb.Metric {
 	// Append a new metric to the metrics slice
 	newMetric := &pb.Metric{
@@ -87,11 +90,17 @@ func main() {
 		newdropouts: float64(netStats[0].Dropout),
 	}
 	//=======================================================
+	// Initialize CPU times
+	snap, err := cpu.Times(false)
+	if err != nil {
+		log.Fatalf("failed to prime CPU times: %v", err)
+	}
+	prevCPUTimes := snap[0]
 
 	for {
+		start_time := t.Now()
 		intervalSec := float64(scnInterval) / 1000
 		fmt.Printf("============= Availability Scan time: %ds ==============\n", timePast/1000)
-		start_time := t.Now()
 
 		var wg sync.WaitGroup
 		wg.Add(3)
@@ -101,20 +110,22 @@ func main() {
 		netChan := make(chan dropstats, 1)
 
 		prevDropStats := DropStats
-		//============================= CPU Idle Time Percent =============================
+		//============================= CPU Idle + User Time Percent =============================
 		go func() {
 			defer wg.Done()
-			cmd := exec.Command("bash", "-c", "iostat -c 1 2 ")
-			output, err := cmd.Output()
+			times, err := cpu.Times(false)
 			if err != nil {
-				log.Printf("Error running iostat command: %v", err)
-				cpuChan <- 0
-				return
+				log.Printf("cpu.Times error: %v", err)
 			}
-			// outputStr := string(output)
-			fields := strings.Fields(string(output))
-			idle_percent, _ := strconv.ParseFloat(fields[32], 64)
-			cpuChan <- idle_percent
+			curr := times[0]
+			// compute deltas
+			deltaUser := curr.User - prevCPUTimes.User
+			deltaTotal := sumAll(curr) - sumAll(prevCPUTimes)
+			deltaIdle := curr.Idle - prevCPUTimes.Idle
+			prevCPUTimes = curr
+			// idle := deltaIdle / deltaTotal * 100
+			available_cpu := (deltaIdle + deltaUser) / deltaTotal * 100
+			cpuChan <- float64(available_cpu)
 		}()
 
 		//============================= Memory Swaps =============================

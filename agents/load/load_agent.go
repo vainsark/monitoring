@@ -27,8 +27,8 @@ var (
 	MaxMetricBuff = 10   // max number of metrics to keep in the buffer
 	timePast      = 0
 	sendDelta     = 0
-	MetricsLen    = 9 // number of metrics per iteration
-	ServerIP      = "localhost"
+	MetricsLen    = 9             // number of metrics per iteration
+	ServerIP      = ids.ServerIP  // default server IP
 	DiskName      = ids.StorageID // name of the disk to monitor
 	devID         = ids.DeviceId
 	agentId       = ids.LoadID
