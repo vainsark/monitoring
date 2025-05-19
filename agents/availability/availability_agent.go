@@ -120,8 +120,8 @@ func main() {
 			curr := times[0]
 			// compute deltas
 			deltaUser := curr.User - prevCPUTimes.User
-			deltaTotal := sumAll(curr) - sumAll(prevCPUTimes)
 			deltaIdle := curr.Idle - prevCPUTimes.Idle
+			deltaTotal := sumAll(curr) - sumAll(prevCPUTimes)
 			prevCPUTimes = curr
 			// idle := deltaIdle / deltaTotal * 100
 			available_cpu := (deltaIdle + deltaUser) / deltaTotal * 100

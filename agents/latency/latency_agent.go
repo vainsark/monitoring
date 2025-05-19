@@ -273,6 +273,8 @@ func main() {
 			pinger.Count = 1
 			pinger.SetPrivileged(true)
 			err = pinger.Run()
+			timeout := t.Duration(float64(scnInterval)*0.75) * t.Millisecond
+			pinger.Timeout = timeout
 			if err != nil {
 				log.Printf("Ping failed: %v", err)
 				netChan <- 0

@@ -6,7 +6,7 @@
 
 # go run agents/latency/latency_agent.go
 
-.PHONY: docker-up run-all server-run load-run latency-run availability-run stress_cpu stress_disk stress_mem stress_mem_lat
+.PHONY: docker-up run-all server-run load-run latency-run availability-run user-params stress_cpu stress_disk stress_mem stress_mem_lat 
 
 docker-up:
 	cd docker && docker-compose up -d
@@ -22,7 +22,8 @@ latency-run:
 
 availability-run:
 	go run agents/availability/availability_agent.go $(server)
-	
+user-params:
+	go run user/userParams.go $(server) $(devname) $(agent) $(scan) $(trans)
 run-all:
 	go run agents/load/load_agent.go $(server) & \
 	sudo /usr/local/go/bin/go run agents/latency/latency_agent.go $(server) & \
