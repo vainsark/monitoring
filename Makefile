@@ -1,10 +1,4 @@
-
-# =====================
 # export PATH=$PATH:$(go env GOPATH)/bin
-
-# sudo /usr/local/go/bin/go run latency_agent.go 
-
-# go run agents/latency/latency_agent.go
 
 .PHONY: docker-up run-all server-run load-run latency-run availability-run user-params stress_cpu stress_disk stress_mem stress_mem_lat 
 
@@ -39,7 +33,6 @@ generate_grpc_code:
 		--go-grpc_out=loadmonitor_proto \
 		--go-grpc_opt=paths=source_relative \
 		loadmonitor.proto
-
 
 stress_cpu:
 	stress --cpu 1 --timeout 30s

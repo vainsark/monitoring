@@ -25,6 +25,18 @@
     },
     {
       "type": "panel",
+      "id": "stat",
+      "name": "Stat",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "text",
+      "name": "Text",
+      "version": ""
+    },
+    {
+      "type": "panel",
       "id": "timeseries",
       "name": "Time series",
       "version": ""
@@ -52,6 +64,94 @@
   "id": null,
   "links": [],
   "panels": [
+    {
+      "gridPos": {
+        "h": 3,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "id": 8,
+      "options": {
+        "code": {
+          "language": "plaintext",
+          "showLineNumbers": false,
+          "showMiniMap": false
+        },
+        "content": "<div style=\"text-align: center; font-size: 36px;\"><b>Device: Raspberry_Pi_2  -  Agent: Load<b></div>",
+        "mode": "markdown"
+      },
+      "pluginVersion": "11.5.2",
+      "title": "Dashboard",
+      "transparent": true,
+      "type": "text"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${DS_INFLUXDB}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "id": 7,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "text": {
+          "titleSize": 30,
+          "valueSize": 40
+        },
+        "textMode": "value_and_name",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.5.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${DS_INFLUXDB}"
+          },
+          "query": "from(bucket:\"metrics\")\r\n  |> range(start: 0)\r\n  |> filter(fn: (r) =>\r\n       r._measurement == \"device_params\" and\r\n       r.deviceId      == \"Raspberry_Pi_2\" and\r\n       r.agentId       == \"Load\"\r\n  )\r\n  |> filter(fn: (r) =>\r\n       r._field == \"ScnFreq\" or\r\n       r._field == \"TransMult\"\r\n  )\r\n  |> last()  // pick the latest point for each field series\r\n  |> pivot(\r\n       rowKey:       [\"_time\", \"deviceId\", \"agentId\"],\r\n       columnKey:    [\"_field\"],\r\n       valueColumn:  \"_value\"\r\n     )\r\n  |> keep(columns: [\"ScnFreq\", \"TransMult\"])\r\n  |> rename(columns: {ScnFreq: \"Scan Period [ms]\", TransMult: \"Transmission Multiplier\"})\r\n",
+          "refId": "A"
+        }
+      ],
+      "title": "Monitoring Parameters",
+      "transparent": true,
+      "type": "stat"
+    },
     {
       "datasource": {
         "type": "influxdb",
@@ -118,9 +218,10 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 0
+        "y": 3
       },
       "id": 1,
+      "maxDataPoints": 1600,
       "options": {
         "legend": {
           "calcs": [],
@@ -141,7 +242,7 @@
             "type": "influxdb",
             "uid": "${DS_INFLUXDB}"
           },
-          "query": "from(bucket: \"metrics\")\r\n  |> range(start: -1h)\r\n  |> filter(fn: (r) => r[\"_measurement\"] == \"Load\")\r\n  |> filter(fn: (r) => r[\"type\"] == \"CPU Usage\")\r\n  |> yield(name: \"cpu_util\")",
+          "query": "from(bucket: \"metrics\")\r\n  |> range(start: -1h)\r\n  |> filter(fn: (r) => r[\"deviceId\"] == \"Raspberry_Pi_2\")\r\n  |> filter(fn: (r) => r[\"_measurement\"] == \"Load\")\r\n  |> filter(fn: (r) => r[\"type\"] == \"CPU Usage\")\r\n  |> yield(name: \"cpu_util\")\r\n\r\n",
           "refId": "A"
         }
       ],
@@ -214,9 +315,10 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 0
+        "y": 3
       },
       "id": 2,
+      "maxDataPoints": 1500,
       "options": {
         "legend": {
           "calcs": [],
@@ -233,12 +335,12 @@
       "pluginVersion": "11.5.2",
       "targets": [
         {
-          "query": "from(bucket: \"metrics\")\r\n  |> range(start: -1h)\r\n  |> filter(fn: (r) => r[\"_measurement\"] == \"Load\")\r\n  |> filter(fn: (r) => r[\"type\"] == \"Memory Usage\")\r\n  |> yield(name: \"memory_util\")",
-          "refId": "A",
           "datasource": {
             "type": "influxdb",
             "uid": "${DS_INFLUXDB}"
-          }
+          },
+          "query": "from(bucket: \"metrics\")\r\n  |> range(start: -1h)\r\n  |> filter(fn: (r) => r[\"deviceId\"] == \"Raspberry_Pi_2\")\r\n  |> filter(fn: (r) => r[\"_measurement\"] == \"Load\")\r\n  |> filter(fn: (r) => r[\"type\"] == \"Memory Usage\")\r\n  |> yield(name: \"memory_util\")",
+          "refId": "A"
         }
       ],
       "title": "Memory Utilization",
@@ -310,7 +412,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 8
+        "y": 11
       },
       "id": 3,
       "options": {
@@ -329,12 +431,12 @@
       "pluginVersion": "11.5.2",
       "targets": [
         {
-          "query": "from(bucket: \"metrics\")\r\n  |> range(start: -1h)\r\n  |> filter(fn: (r) => r[\"_measurement\"] == \"Load\")\r\n  |> filter(fn: (r) => r[\"type\"] == \"Disk Usage\")\r\n  |> yield(name: \"disk_util\")",
-          "refId": "A",
           "datasource": {
             "type": "influxdb",
             "uid": "${DS_INFLUXDB}"
-          }
+          },
+          "query": "from(bucket: \"metrics\")\r\n  |> range(start: -1h)\r\n  |> filter(fn: (r) => r[\"deviceId\"] == \"Raspberry_Pi_2\")\r\n  |> filter(fn: (r) => r[\"_measurement\"] == \"Load\")\r\n  |> filter(fn: (r) => r[\"type\"] == \"Disk Usage\")\r\n  |> yield(name: \"disk_util\")",
+          "refId": "A"
         }
       ],
       "title": "Disk",
@@ -404,7 +506,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 8
+        "y": 11
       },
       "id": 5,
       "options": {
@@ -423,12 +525,12 @@
       "pluginVersion": "11.5.2",
       "targets": [
         {
-          "query": "  from(bucket: \"metrics\")\r\n  |> range(start: -1h)\r\n  |> filter(fn: (r) => r[\"_measurement\"] == \"Load\")\r\n  |> filter(fn: (r) => r[\"type\"] == \"BytesWrite\" or r[\"type\"] == \"BytesRead\")\r\n  |> yield(name: \"Disk Read/Write\")\r\n",
-          "refId": "A",
           "datasource": {
             "type": "influxdb",
             "uid": "${DS_INFLUXDB}"
-          }
+          },
+          "query": "  from(bucket: \"metrics\")\r\n  |> range(start: -1h)\r\n  |> filter(fn: (r) => r[\"deviceId\"] == \"Raspberry_Pi_2\")\r\n  |> filter(fn: (r) => r[\"_measurement\"] == \"Load\")\r\n  |> filter(fn: (r) => r[\"type\"] == \"BytesWrite\" or r[\"type\"] == \"BytesRead\")\r\n  |> yield(name: \"Disk Read/Write\")\r\n",
+          "refId": "A"
         }
       ],
       "title": "Disk Read/Write",
@@ -498,7 +600,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 16
+        "y": 19
       },
       "id": 4,
       "options": {
@@ -517,12 +619,12 @@
       "pluginVersion": "11.5.2",
       "targets": [
         {
-          "query": "  from(bucket: \"metrics\")\r\n  |> range(start: -1h)\r\n  |> filter(fn: (r) => r[\"_measurement\"] == \"Load\")\r\n  |> filter(fn: (r) => r[\"type\"] == \"BytesIn\" or r[\"type\"] == \"BytesOut\")\r\n  |> yield(name: \"network_util\")\r\n",
-          "refId": "A",
           "datasource": {
             "type": "influxdb",
             "uid": "${DS_INFLUXDB}"
-          }
+          },
+          "query": "  from(bucket: \"metrics\")\r\n  |> range(start: -1h)\r\n  |> filter(fn: (r) => r[\"deviceId\"] == \"Raspberry_Pi_2\")\r\n  |> filter(fn: (r) => r[\"_measurement\"] == \"Load\")\r\n  |> filter(fn: (r) => r[\"type\"] == \"BytesIn\" or r[\"type\"] == \"BytesOut\")\r\n  |> yield(name: \"network_util\")\r\n",
+          "refId": "A"
         }
       ],
       "title": "Network Load",
@@ -592,7 +694,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 16
+        "y": 19
       },
       "id": 6,
       "options": {
@@ -611,19 +713,19 @@
       "pluginVersion": "11.5.2",
       "targets": [
         {
-          "query": "  from(bucket: \"metrics\")\r\n  |> range(start: -1h)\r\n  |> filter(fn: (r) => r[\"_measurement\"] == \"Load\")\r\n  |> filter(fn: (r) => r[\"type\"] == \"Sensoric Read\" or r[\"type\"] == \"Sensoric Write\")\r\n  |> yield(name: \"Sensor Read/Write\")\r\n",
-          "refId": "A",
           "datasource": {
             "type": "influxdb",
             "uid": "${DS_INFLUXDB}"
-          }
+          },
+          "query": "  from(bucket: \"metrics\")\r\n  |> range(start: -1h)\r\n  |> filter(fn: (r) => r[\"deviceId\"] == \"Raspberry_Pi_2\")\r\n  |> filter(fn: (r) => r[\"_measurement\"] == \"Load\")\r\n  |> filter(fn: (r) => r[\"type\"] == \"Sensoric Read\" or r[\"type\"] == \"Sensoric Write\")\r\n  |> yield(name: \"Sensor Read/Write\")\r\n",
+          "refId": "A"
         }
       ],
       "title": "Sensoric load",
       "type": "timeseries"
     }
   ],
-  "refresh": "5s",
+  "refresh": "auto",
   "schemaVersion": 40,
   "tags": [],
   "templating": {
@@ -633,10 +735,22 @@
     "from": "now-5m",
     "to": "now"
   },
-  "timepicker": {},
+  "timepicker": {
+    "refresh_intervals": [
+      "5s",
+      "10s",
+      "30s",
+      "1m",
+      "5m",
+      "15m",
+      "30m",
+      "1h",
+      "2h"
+    ]
+  },
   "timezone": "browser",
   "title": "LOAD",
-  "uid": "deg5kguox1r0gf",
-  "version": 27,
+  "uid": "deg5kgucx1r0gf",
+  "version": 12,
   "weekStart": ""
 }

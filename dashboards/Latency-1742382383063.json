@@ -25,6 +25,18 @@
     },
     {
       "type": "panel",
+      "id": "stat",
+      "name": "Stat",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "text",
+      "name": "Text",
+      "version": ""
+    },
+    {
+      "type": "panel",
       "id": "timeseries",
       "name": "Time series",
       "version": ""
@@ -53,10 +65,99 @@
   "links": [],
   "panels": [
     {
+      "gridPos": {
+        "h": 3,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "id": 6,
+      "options": {
+        "code": {
+          "language": "plaintext",
+          "showLineNumbers": false,
+          "showMiniMap": false
+        },
+        "content": "<div style=\"text-align: center; font-size: 36px;\"><b>Device: Raspberry_Pi_2  -  Agent: Latency<b></div>",
+        "mode": "markdown"
+      },
+      "pluginVersion": "11.5.2",
+      "title": "Dashboard",
+      "transparent": true,
+      "type": "text"
+    },
+    {
       "datasource": {
         "type": "influxdb",
         "uid": "${DS_INFLUXDB}"
       },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "id": 5,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "text": {
+          "titleSize": 30,
+          "valueSize": 40
+        },
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.5.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${DS_INFLUXDB}"
+          },
+          "query": "from(bucket:\"metrics\")\r\n  |> range(start: 0)\r\n  |> filter(fn: (r) =>\r\n       r._measurement == \"device_params\" and\r\n       r.deviceId      == \"Raspberry_Pi_2\" and\r\n       r.agentId       == \"Latency\"\r\n  )\r\n  |> filter(fn: (r) =>\r\n       r._field == \"ScnFreq\" or\r\n       r._field == \"TransMult\"\r\n  )\r\n  |> last()  // pick the latest point for each field series\r\n  |> pivot(\r\n       rowKey:       [\"_time\", \"deviceId\", \"agentId\"],\r\n       columnKey:    [\"_field\"],\r\n       valueColumn:  \"_value\"\r\n     )\r\n  |> keep(columns: [\"ScnFreq\", \"TransMult\"])\r\n  |> rename(columns: {ScnFreq: \"Scan Period [ms]\", TransMult: \"Transmission Multiplier\"})\r\n",
+          "refId": "A"
+        }
+      ],
+      "title": "Monitoring Parameters",
+      "transparent": true,
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${DS_INFLUXDB}"
+      },
+      "description": "",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -66,7 +167,7 @@
             "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
-            "axisLabel": "ms",
+            "axisLabel": "µs",
             "axisPlacement": "auto",
             "barAlignment": 0,
             "barWidthFactor": 0.6,
@@ -116,9 +217,9 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 0
+        "y": 3
       },
-      "id": 3,
+      "id": 7,
       "options": {
         "legend": {
           "calcs": [],
@@ -135,24 +236,15 @@
       "pluginVersion": "11.5.2",
       "targets": [
         {
-          "query": "from(bucket: \"metrics\")\r\n  |> range(start: -1h)\r\n  |> filter(fn: (r) => r[\"_measurement\"] == \"Latency\")\r\n  |> filter(fn: (r) => r[\"type\"] == \"read wait\")\r\n  |> map(fn: (r) => ({ r with type: \"Read Wait\" }))\r\n  |> yield(name: \"storage read wait\")",
-          "refId": "A",
-          "datasource": {
-            "type": "influxdb",
-            "uid": "${DS_INFLUXDB}"
-          }
-        },
-        {
           "datasource": {
             "type": "influxdb",
             "uid": "${DS_INFLUXDB}"
           },
-          "hide": false,
-          "query": "from(bucket: \"metrics\")\r\n  |> range(start: -1h)\r\n  |> filter(fn: (r) => r[\"_measurement\"] == \"Latency\")\r\n  |> filter(fn: (r) => r[\"type\"] == \"write wait\")\r\n  |> map(fn: (r) => ({ r with type: \"Write Wait\" }))\r\n  |> yield(name: \"storage write wait\")",
-          "refId": "B"
+          "query": "from(bucket: \"metrics\")\r\n  |> range(start: -1h)\r\n  |> filter(fn: (r) => r[\"deviceId\"] == \"Raspberry_Pi_2\")\r\n  |> filter(fn: (r) => r[\"_measurement\"] == \"Latency\")\r\n  |> filter(fn: (r) => r[\"type\"] == \"CPU Latency\")\r\n  |> yield(name: \"cpu_laten\")",
+          "refId": "A"
         }
       ],
-      "title": "Disk Latency",
+      "title": "CPU Wake-Up Jitter",
       "type": "timeseries"
     },
     {
@@ -219,7 +311,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 0
+        "y": 3
       },
       "id": 2,
       "options": {
@@ -238,15 +330,237 @@
       "pluginVersion": "11.5.2",
       "targets": [
         {
-          "query": "from(bucket: \"metrics\")\r\n  |> range(start: -1h)\r\n  |> filter(fn: (r) => r[\"_measurement\"] == \"Latency\")\r\n  |> filter(fn: (r) => r[\"type\"] == \"Memory Latency\")\r\n  |> yield(name: \"memory_laten\")",
-          "refId": "A",
           "datasource": {
             "type": "influxdb",
             "uid": "${DS_INFLUXDB}"
-          }
+          },
+          "query": "from(bucket: \"metrics\")\r\n  |> range(start: -1h)\r\n  |> filter(fn: (r) => r[\"deviceId\"] == \"Raspberry_Pi_2\")\r\n  |> filter(fn: (r) => r[\"_measurement\"] == \"Latency\")\r\n  |> filter(fn: (r) => r[\"type\"] == \"Memory Latency\")\r\n  |> yield(name: \"memory_laten\")",
+          "refId": "A"
         }
       ],
       "title": "Memory Latency",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${DS_INFLUXDB}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "ms",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 11
+      },
+      "id": 3,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.5.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${DS_INFLUXDB}"
+          },
+          "query": "from(bucket: \"metrics\")\r\n  |> range(start: -1h)\r\n  |> filter(fn: (r) => r[\"deviceId\"] == \"Raspberry_Pi_2\")\r\n  |> filter(fn: (r) => r[\"_measurement\"] == \"Latency\")\r\n  |> filter(fn: (r) => r[\"type\"] == \"read wait\")\r\n  |> map(fn: (r) => ({ r with type: \"Read Wait\" }))\r\n  |> yield(name: \"storage read wait\")",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${DS_INFLUXDB}"
+          },
+          "hide": false,
+          "query": "from(bucket: \"metrics\")\r\n  |> range(start: -1h)\r\n  |> filter(fn: (r) => r[\"deviceId\"] == \"Raspberry_Pi_2\")\r\n  |> filter(fn: (r) => r[\"_measurement\"] == \"Latency\")\r\n  |> filter(fn: (r) => r[\"type\"] == \"write wait\")\r\n  |> map(fn: (r) => ({ r with type: \"Write Wait\" }))\r\n  |> yield(name: \"storage write wait\")",
+          "refId": "B"
+        }
+      ],
+      "title": "Disk Latency",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${DS_INFLUXDB}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "µs",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "__systemRef": "hideSeriesFrom",
+            "matcher": {
+              "id": "byNames",
+              "options": {
+                "mode": "exclude",
+                "names": [
+                  "value {deviceId=\"Raspberry_Pi_2\", type=\"Read Time\"}"
+                ],
+                "prefix": "All except:",
+                "readOnly": true
+              }
+            },
+            "properties": [
+              {
+                "id": "custom.hideFrom",
+                "value": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": true
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 11
+      },
+      "id": 4,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.5.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${DS_INFLUXDB}"
+          },
+          "query": "from(bucket: \"metrics\")\r\n  |> range(start: -1h)\r\n  |> filter(fn: (r) => r[\"deviceId\"] == \"Raspberry_Pi_2\")\r\n  |> filter(fn: (r) => r[\"_measurement\"] == \"Latency\")\r\n  |> filter(fn: (r) => r[\"type\"] == \"Sensor Latency\")\r\n  |> map(fn: (r) => ({ r with type: \"Read Time\" }))\r\n  |> yield(name: \"sensoric read\")",
+          "refId": "A"
+        }
+      ],
+      "title": "Sensor Read time",
       "type": "timeseries"
     },
     {
@@ -315,7 +629,7 @@
               "options": {
                 "mode": "exclude",
                 "names": [
-                  "value Network Interface Latency"
+                  "value {deviceId=\"Raspberry_Pi_2\", type=\"Network Interface Latency\"}"
                 ],
                 "prefix": "All except:",
                 "readOnly": true
@@ -338,7 +652,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 8
+        "y": 19
       },
       "id": 1,
       "options": {
@@ -361,105 +675,11 @@
             "type": "influxdb",
             "uid": "${DS_INFLUXDB}"
           },
-          "query": "from(bucket: \"metrics\")\r\n  |> range(start: -1h)\r\n  |> filter(fn: (r) => r[\"_measurement\"] == \"Latency\")\r\n  |> filter(fn: (r) => r[\"type\"] == \"NetInterLaten\")\r\n  |> map(fn: (r) => ({ r with type: \"Network Interface Latency\" }))\r\n  |> yield(name: \"utilization\")",
+          "query": "from(bucket: \"metrics\")\r\n  |> range(start: -1h)\r\n  |> filter(fn: (r) => r[\"deviceId\"] == \"Raspberry_Pi_2\")\r\n  |> filter(fn: (r) => r[\"_measurement\"] == \"Latency\")\r\n  |> filter(fn: (r) => r[\"type\"] == \"NetInterLaten\")\r\n  |> map(fn: (r) => ({ r with type: \"Network Interface Latency\" }))\r\n  |> yield(name: \"utilization\")",
           "refId": "A"
         }
       ],
       "title": "Network Latency",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "influxdb",
-        "uid": "${DS_INFLUXDB}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "µs",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 8
-      },
-      "id": 4,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "pluginVersion": "11.5.2",
-      "targets": [
-        {
-          "query": "from(bucket: \"metrics\")\r\n  |> range(start: -1h)\r\n  |> filter(fn: (r) => r[\"_measurement\"] == \"Latency\")\r\n  |> filter(fn: (r) => r[\"type\"] == \"Sensor Latency\")\r\n  |> map(fn: (r) => ({ r with type: \"Read Time\" }))\r\n  |> yield(name: \"sensoric read\")",
-          "refId": "A",
-          "datasource": {
-            "type": "influxdb",
-            "uid": "${DS_INFLUXDB}"
-          }
-        }
-      ],
-      "title": "Sensor Read time",
       "type": "timeseries"
     }
   ],
@@ -470,13 +690,13 @@
     "list": []
   },
   "time": {
-    "from": "now-1m",
+    "from": "now-5m",
     "to": "now"
   },
   "timepicker": {},
   "timezone": "browser",
   "title": "Latency",
-  "uid": "beg6irlzoge80b",
-  "version": 12,
+  "uid": "beg6irlzoge80c",
+  "version": 23,
   "weekStart": ""
 }

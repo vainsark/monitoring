@@ -25,6 +25,18 @@
     },
     {
       "type": "panel",
+      "id": "stat",
+      "name": "Stat",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "text",
+      "name": "Text",
+      "version": ""
+    },
+    {
+      "type": "panel",
       "id": "timeseries",
       "name": "Time series",
       "version": ""
@@ -53,6 +65,94 @@
   "links": [],
   "panels": [
     {
+      "gridPos": {
+        "h": 3,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "id": 6,
+      "options": {
+        "code": {
+          "language": "plaintext",
+          "showLineNumbers": false,
+          "showMiniMap": false
+        },
+        "content": "<div style=\"text-align: center; font-size: 36px;\"><b>Device: Raspberry_Pi_2  -  Agent: Availability<b></div>",
+        "mode": "markdown"
+      },
+      "pluginVersion": "11.5.2",
+      "title": "Dashboard",
+      "transparent": true,
+      "type": "text"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${DS_INFLUXDB}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "id": 4,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "text": {
+          "titleSize": 30,
+          "valueSize": 40
+        },
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.5.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${DS_INFLUXDB}"
+          },
+          "query": "from(bucket:\"metrics\")\r\n  |> range(start: 0)\r\n  |> filter(fn: (r) =>\r\n       r._measurement == \"device_params\" and\r\n       r.deviceId      == \"Raspberry_Pi_2\" and\r\n       r.agentId       == \"Availability\"\r\n  )\r\n  |> filter(fn: (r) =>\r\n       r._field == \"ScnFreq\" or\r\n       r._field == \"TransMult\"\r\n  )\r\n  |> last()  // pick the latest point for each field series\r\n  |> pivot(\r\n       rowKey:       [\"_time\", \"deviceId\", \"agentId\"],\r\n       columnKey:    [\"_field\"],\r\n       valueColumn:  \"_value\"\r\n     )\r\n  |> keep(columns: [\"ScnFreq\", \"TransMult\"])\r\n  |> rename(columns: {ScnFreq: \"Scan Period [ms]\", TransMult: \"Transmission Multiplier\"})\r\n",
+          "refId": "A"
+        }
+      ],
+      "title": "Monitoring Parameters",
+      "transparent": true,
+      "type": "stat"
+    },
+    {
       "datasource": {
         "type": "influxdb",
         "uid": "${DS_INFLUXDB}"
@@ -66,7 +166,7 @@
             "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
-            "axisLabel": "",
+            "axisLabel": "%",
             "axisPlacement": "auto",
             "barAlignment": 0,
             "barWidthFactor": 0.6,
@@ -116,9 +216,9 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 0
+        "y": 3
       },
-      "id": 2,
+      "id": 3,
       "options": {
         "legend": {
           "calcs": [],
@@ -135,15 +235,15 @@
       "pluginVersion": "11.5.2",
       "targets": [
         {
-          "query": "from(bucket: \"metrics\")\r\n  |> range(start: -1h)\r\n  |> filter(fn: (r) => r[\"_measurement\"] == \"Availability\")\r\n  |> filter(fn: (r) => r[\"type\"] == \"Memory Swaps\")\r\n  |> yield(name: \"swaps\")",
-          "refId": "A",
           "datasource": {
             "type": "influxdb",
             "uid": "${DS_INFLUXDB}"
-          }
+          },
+          "query": "from(bucket: \"metrics\")\r\n  |> range(start: -1h)\r\n  |> filter(fn: (r) => r[\"deviceId\"] == \"Raspberry_Pi_2\")\r\n  |> filter(fn: (r) => r[\"_measurement\"] == \"Availability\")\r\n  |> filter(fn: (r) => r[\"type\"] == \"Idle Percent\")\r\n  |> yield(name: \"IDLE\")",
+          "refId": "A"
         }
       ],
-      "title": "Memory Swaps",
+      "title": "Available CPU for User",
       "type": "timeseries"
     },
     {
@@ -212,7 +312,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 0
+        "y": 3
       },
       "id": 1,
       "options": {
@@ -235,11 +335,199 @@
             "type": "influxdb",
             "uid": "${DS_INFLUXDB}"
           },
-          "query": "  from(bucket: \"metrics\")\r\n  |> range(start: -1h)\r\n  |> filter(fn: (r) => r[\"_measurement\"] == \"Availability\")\r\n  |> filter(fn: (r) => r[\"type\"] == \"DropsIn\" or r[\"type\"] == \"DropsOut\")\r\n  |> yield(name: \"Packet Drops\")",
+          "query": "  from(bucket: \"metrics\")\r\n  |> range(start: -1h)\r\n  |> filter(fn: (r) => r[\"deviceId\"] == \"Raspberry_Pi_2\")\r\n  |> filter(fn: (r) => r[\"_measurement\"] == \"Availability\")\r\n  |> filter(fn: (r) => r[\"type\"] == \"DropsIn\" or r[\"type\"] == \"DropsOut\")\r\n  |> yield(name: \"Packet Drops\")",
           "refId": "A"
         }
       ],
       "title": "Packet Drops",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${DS_INFLUXDB}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "%",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 11
+      },
+      "id": 2,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.5.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${DS_INFLUXDB}"
+          },
+          "query": "from(bucket: \"metrics\")\r\n  |> range(start: -1h)\r\n  |> filter(fn: (r) => r[\"deviceId\"] == \"Raspberry_Pi_2\")\r\n  |> filter(fn: (r) => r[\"_measurement\"] == \"Availability\")\r\n  |> filter(fn: (r) => r[\"type\"] == \"Memory Swaps\")\r\n  |> yield(name: \"swaps\")",
+          "refId": "A"
+        }
+      ],
+      "title": "Memory Swaps",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${DS_INFLUXDB}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "MB",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 11
+      },
+      "id": 5,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.5.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${DS_INFLUXDB}"
+          },
+          "query": "from(bucket: \"metrics\")\r\n  |> range(start: -1h)\r\n  |> filter(fn: (r) => r[\"deviceId\"] == \"Raspberry_Pi_2\")\r\n  |> filter(fn: (r) => r[\"_measurement\"] == \"Availability\")\r\n  |> filter(fn: (r) => r[\"type\"] == \"Memory Swaps MB\")\r\n  |> yield(name: \"swaps\")",
+          "refId": "A"
+        }
+      ],
+      "title": "Memory Swaps MB",
       "type": "timeseries"
     }
   ],
@@ -250,13 +538,13 @@
     "list": []
   },
   "time": {
-    "from": "now-1m",
+    "from": "now-5m",
     "to": "now"
   },
   "timepicker": {},
   "timezone": "browser",
   "title": "Availability",
-  "uid": "feg6d3x4x76yoe",
-  "version": 7,
+  "uid": "feg6d3x4x76ybe",
+  "version": 8,
   "weekStart": ""
 }

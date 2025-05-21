@@ -8,19 +8,21 @@ import (
 	"strconv"
 	t "time"
 
+	"github.com/vainsark/monitoring/agents/ids"
 	pb "github.com/vainsark/monitoring/loadmonitor_proto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
 var (
-	ServerIP = "localhost"
+	ServerIP = ids.ServerIP // default server IP
 )
 
 func main() {
 	fmt.Println(os.Args)
 	Params := &pb.UserParams{}
 	// Set the server IP address from command line argument or use default
+	// Get the device name, agenID, scan period and transmit multiplier from command line arguments
 	if len(os.Args) > 1 {
 		arg := 1
 		if len(os.Args) > 5 {

@@ -42,12 +42,14 @@ type memstats struct {
 }
 
 func sumAll(t cpu.TimesStat) float64 {
+	/*	Sums all the CPU times. */
 	return t.User + t.System + t.Idle +
 		t.Nice + t.Iowait + t.Irq +
 		t.Softirq + t.Steal + t.Guest + t.GuestNice
 }
 func appendMetric(metrics []*pb.Metric, dataName string, data float64) []*pb.Metric {
-	// Append a new metric to the metrics slice
+	/*	Appends a new metric to the metrics slice.
+		Prints the metric name and value. */
 	newMetric := &pb.Metric{
 		DataName:  dataName,
 		Data:      data,
@@ -58,7 +60,7 @@ func appendMetric(metrics []*pb.Metric, dataName string, data float64) []*pb.Met
 	return append(metrics, newMetric)
 }
 func timetosend() bool {
-	// Calculate the time since the last send and corrects for correct modulus
+	/*	/ Calculate the time since the last send and corrects for correct modulus */
 	return timePast == 0 || ((timePast-sendDelta)%(scnInterval*TransmitMult) == 0)
 }
 func main() {
@@ -77,10 +79,9 @@ func main() {
 	client := pb.NewLoadMonitorClient(conn)
 
 	// Initialize the metrics
-	// Set the device ID and agent ID
 	metrics := &pb.Metrics{DeviceId: devID, AgentId: agentId}
 	//=======================================================
-	// Initialize the drop statistics
+	// Initialize drop statistics
 	netStats, err := net.IOCounters(false)
 	if err != nil {
 		log.Fatalf("Error while getting Network IO Counters: %v", err)
@@ -98,19 +99,19 @@ func main() {
 	prevCPUTimes := snap[0]
 
 	for {
-		start_time := t.Now()
+		start_time := t.Now() // Start the timer for the scan
 		intervalSec := float64(scnInterval) / 1000
 		fmt.Printf("============= Availability Scan time: %ds ==============\n", timePast/1000)
 
 		var wg sync.WaitGroup
-		wg.Add(3)
-
+		wg.Add(3) // Number of goroutines to wait for
+		// Create channels for each goroutine
 		cpuChan := make(chan float64, 1)
 		memChan := make(chan memstats, 1)
 		netChan := make(chan dropstats, 1)
 
 		prevDropStats := DropStats
-		//============================= CPU Idle + User Time Percent =============================
+		//============================= CPU Availability Percent =============================
 		go func() {
 			defer wg.Done()
 			times, err := cpu.Times(false)
@@ -121,10 +122,9 @@ func main() {
 			// compute deltas
 			deltaUser := curr.User - prevCPUTimes.User
 			deltaIdle := curr.Idle - prevCPUTimes.Idle
-			deltaTotal := sumAll(curr) - sumAll(prevCPUTimes)
+			deltaTotal := sumAll(curr) - sumAll(prevCPUTimes) // Calculate the total CPU delta
 			prevCPUTimes = curr
-			// idle := deltaIdle / deltaTotal * 100
-			available_cpu := (deltaIdle + deltaUser) / deltaTotal * 100
+			available_cpu := (deltaIdle + deltaUser) / deltaTotal * 100 // Calculate the available CPU percentage
 			cpuChan <- float64(available_cpu)
 		}()
 
@@ -158,32 +158,32 @@ func main() {
 			deltaOutTotal := newOut - prev.newdropouts
 			deltain := deltaInTotal / intervalSec
 			deltaout := deltaOutTotal / intervalSec
+
 			netChan <- dropstats{
 				dropins:     deltain,
 				dropouts:    deltaout,
 				newdropins:  newIn,
 				newdropouts: newOut,
 			}
-			// fmt.Printf("Dropped In: %v Packets, Dropped Out: %v Packets\n", deltain, deltaout)
-
 		}(prevDropStats)
 
+		// Wait for all goroutines to finish
 		wg.Wait()
-		//==========================================================================
+		// Close the channels
 		idle_percent := <-cpuChan
 		swapStat := <-memChan
 		deltadrops := <-netChan
-
+		// Append all metrics to the metrics slice
 		metrics.Metrics = appendMetric(metrics.Metrics, "Idle Percent", idle_percent)
 		metrics.Metrics = appendMetric(metrics.Metrics, "Memory Swaps", swapStat.swaps)
 		metrics.Metrics = appendMetric(metrics.Metrics, "Memory Swaps MB", float64(swapStat.swapsMB))
 		metrics.Metrics = appendMetric(metrics.Metrics, "DropsIn", float64(deltadrops.dropins))
 		metrics.Metrics = appendMetric(metrics.Metrics, "DropsOut", float64(deltadrops.dropouts))
-
+		// Set the new values for the next iteration
 		DropStats.dropins = deltadrops.dropins
 		DropStats.dropouts = deltadrops.dropouts
 		//==========================================================================
-
+		// Print the metrics buffer length and trim if necessary (only for debugging)
 		if len(metrics.Metrics) > MetricsLen*MaxMetricBuff {
 			fmt.Printf("Trimming oldest metrics...\n")
 			metrics.Metrics = metrics.Metrics[MetricsLen:] // Trim the oldest metrics
@@ -193,11 +193,14 @@ func main() {
 		if timetosend() {
 			// Save current batch in a local variable.
 			m := metrics
-
+			// Reset the metrics for the next batch
+			metrics = &pb.Metrics{DeviceId: devID, AgentId: agentId}
 			go func(m *pb.Metrics) {
+				/* Asynchronously send the data, this will not block the main thread
+				Create a new context with a timeout */
 				start := t.Now()
-				ctx, cancel := context.WithTimeout(context.Background(), 5*t.Second)
-				resp, err := client.LoadData(ctx, m)
+				ctx, cancel := context.WithTimeout(context.Background(), 5*t.Second) // Set a timeout for the context
+				resp, err := client.LoadData(ctx, m)                                 // Send the data to the server
 				cancel()
 				if err != nil {
 					log.Printf("Error while asynchronously sending data: %v", err)
@@ -207,21 +210,18 @@ func main() {
 					newScnInterval := int(resp.ScnFreq)
 					if scnInterval != newScnInterval {
 						scnInterval = newScnInterval
-						sendDelta = timePast % scnInterval //
+						sendDelta = timePast % scnInterval // Compensate for the time passed
 					}
 				}
 				stop_time := t.Since(start)
 				fmt.Printf("Asynchronous sending time: %v\n", stop_time)
 			}(m)
-			// Prepare a new batch.
-
-			metrics = &pb.Metrics{DeviceId: devID, AgentId: agentId}
-
 		}
-
+		//
 		timePast += scnInterval
-		stop_time := t.Since(start_time)
+		stop_time := t.Since(start_time) // Calculate the time taken for the scan
 		fmt.Printf("Total time taken: %v\n", stop_time)
+		// Calculate the actual sleep time (to account for processing time)
 		delta_sleep := (t.Duration(scnInterval) * t.Millisecond) - stop_time
 		t.Sleep(delta_sleep)
 	}

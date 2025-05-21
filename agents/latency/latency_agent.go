@@ -161,12 +161,12 @@ func simulSenseLatency() t.Duration {
 	return minRT + devTime
 }
 func timetosend() bool {
+	/*	/ Calculate the time since the last send and corrects for correct modulus */
 	return timePast == 0 || ((timePast-sendDelta)%(scnInterval*TransmitMult) == 0)
 }
 func main() {
 	// Getting the default IP address
 	defaultIP := getDefIP()
-
 	if len(os.Args) > 1 {
 		ServerIP = os.Args[1]
 	}
@@ -179,12 +179,11 @@ func main() {
 	}
 	defer conn.Close()
 	client := pb.NewLoadMonitorClient(conn)
-
 	//=======================================================
 	// Initialize the metrics
-	// Set the device ID and agent ID
-	metrics := &pb.Metrics{DeviceId: devID, AgentId: agentId}
 
+	metrics := &pb.Metrics{DeviceId: devID, AgentId: agentId}
+	// Set the device ID and agent ID
 	initial, err := disk.IOCounters(DiskName)
 	if err != nil {
 		log.Fatalf("Error getting initial disk IO counters: %v", err)
@@ -198,14 +197,14 @@ func main() {
 	for {
 		// MAIN LOOP
 		fmt.Printf("============= Latency Scan time: %ds ==============\n", timePast/1000)
-		start_time := t.Now()
+		start_time := t.Now() // Start the timer for the scan
 
 		var wg sync.WaitGroup
 		wg.Add(5) // Number of goroutines to wait for
+		// Create channels for each goroutine
 		cpuChan := make(chan float64, 1)
 		memChan := make(chan t.Duration, 1)
-		// diskchan := make(chan DiskResult, 1)
-		diskchan2 := make(chan DiskResult, 1)
+		diskchan := make(chan DiskResult, 1)
 		netChan := make(chan float64, 1)
 		sensorChan := make(chan t.Duration, 1)
 		//============================= CPU Latency =============================
@@ -227,14 +226,14 @@ func main() {
 			memChan <- latency
 		}()
 		//============================= Storage Latency =============================
-		prevDiskStats := DiskStats
+		prevDiskStats := DiskStats // Save the previous disk stats
 		go func(prev prevDiskStat) {
 			defer wg.Done()
 
 			stats, err := disk.IOCounters(DiskName)
 			if err != nil {
 				log.Printf("Error getting disk IO counters: %v", err)
-				diskchan2 <- DiskResult{}
+				diskchan <- DiskResult{}
 				return
 			}
 			curr := stats[DiskName]
@@ -258,7 +257,7 @@ func main() {
 			DiskStats.WriteCount = stats[DiskName].WriteCount
 			DiskStats.WriteTime = stats[DiskName].WriteTime
 
-			diskchan2 <- DiskResult{r_wait: rAwait, w_wait: wAwait}
+			diskchan <- DiskResult{r_wait: rAwait, w_wait: wAwait}
 		}(prevDiskStats)
 		//============================= Network Statistics =============================
 		go func() {
@@ -270,11 +269,11 @@ func main() {
 				netChan <- 0
 				return
 			}
-			pinger.Count = 1
+			pinger.Count = 1 // Send only one ping
 			pinger.SetPrivileged(true)
-			err = pinger.Run()
-			timeout := t.Duration(float64(scnInterval)*0.75) * t.Millisecond
-			pinger.Timeout = timeout
+			err = pinger.Run()                                               // Run the pinger
+			timeout := t.Duration(float64(scnInterval)*0.75) * t.Millisecond // Set the timeout to 75% of the scan interval
+			pinger.Timeout = timeout                                         // Set the timeout for the pinger
 			if err != nil {
 				log.Printf("Ping failed: %v", err)
 				netChan <- 0
@@ -297,21 +296,19 @@ func main() {
 		// Close the channels
 		cpuAvg := <-cpuChan
 		latency := <-memChan
-		// diskResult := <-diskchan
-		diskResult2 := <-diskchan2
+		diskResult := <-diskchan
 		AvgRtt := <-netChan
 		senseRT := <-sensorChan
-		//=======================================================
+		// Append all metrics to the metrics slice
 		metrics.Metrics = appendMetric(metrics.Metrics, "CPU Latency", cpuAvg)
 		metrics.Metrics = appendMetric(metrics.Metrics, "Memory Latency", float64(latency))
-		// metrics.Metrics = appendMetric(metrics.Metrics, "read wait", diskResult.r_wait)
-		// metrics.Metrics = appendMetric(metrics.Metrics, "write wait", diskResult.w_wait)
 		metrics.Metrics = appendMetric(metrics.Metrics, "NetInterLaten", AvgRtt)
-		metrics.Metrics = appendMetric(metrics.Metrics, "read wait", diskResult2.r_wait)
-		metrics.Metrics = appendMetric(metrics.Metrics, "write wait", diskResult2.w_wait)
+		metrics.Metrics = appendMetric(metrics.Metrics, "read wait", diskResult.r_wait)
+		metrics.Metrics = appendMetric(metrics.Metrics, "write wait", diskResult.w_wait)
 		metrics.Metrics = appendMetric(metrics.Metrics, "Sensor Latency", float64(senseRT)/1000)
+
 		//==========================================================================
-		// Print the metrics buffer length and trim if necessary
+		// Print the metrics buffer length and trim if necessary (only for debugging)
 		fmt.Printf("metrics length: %v\n", len(metrics.Metrics))
 		if len(metrics.Metrics) > MetricsLen*MaxMetricBuff {
 			fmt.Printf("Trimming oldest metrics...\n")
@@ -321,12 +318,15 @@ func main() {
 		if timetosend() {
 			// Save current batch in a local variable.
 			m := metrics
-			metrics = &pb.Metrics{DeviceId: devID, AgentId: agentId} // new metrics.
+			// Reset the metrics for the next batch
+			metrics = &pb.Metrics{DeviceId: devID, AgentId: agentId}
 			// Send the data to the server
 			go func(m *pb.Metrics) {
+				/* Asynchronously send the data, this will not block the main thread
+				Create a new context with a timeout */
 				start := t.Now()
-				ctx, cancel := context.WithTimeout(context.Background(), 5*t.Second)
-				resp, err := client.LoadData(ctx, m)
+				ctx, cancel := context.WithTimeout(context.Background(), 5*t.Second) // Set a timeout for the context
+				resp, err := client.LoadData(ctx, m)                                 // Send the data to the server
 				cancel()
 				if err != nil {
 					log.Printf("Error while asynchronously sending data: %v", err)
@@ -336,7 +336,7 @@ func main() {
 					newScnInterval := int(resp.ScnFreq)
 					if scnInterval != newScnInterval {
 						scnInterval = newScnInterval
-						sendDelta = timePast % scnInterval
+						sendDelta = timePast % scnInterval // Compensate for the time passed
 					}
 				}
 				stop_time := t.Since(start)
@@ -345,8 +345,9 @@ func main() {
 		}
 
 		timePast += scnInterval
-		stop_time := t.Since(start_time)
+		stop_time := t.Since(start_time) // Calculate the time taken for the scan
 		fmt.Printf("Total time taken: %v\n", stop_time)
+		// Calculate the actual sleep time (to account for processing time)
 		delta_sleep := (t.Duration(scnInterval) * t.Millisecond) - stop_time
 		t.Sleep(delta_sleep)
 	}

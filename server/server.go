@@ -37,6 +37,7 @@ type agentParams struct {
 }
 
 type server struct {
+	// Embed the unimplemented server
 	pb.UnimplementedLoadMonitorServer
 	influxClient influxdb2.Client
 	org          string
@@ -44,6 +45,7 @@ type server struct {
 }
 
 type userService struct {
+	// Embed the unimplemented server
 	pb.UnimplementedUserInputServer
 	influxClient influxdb2.Client
 	org          string
@@ -51,7 +53,7 @@ type userService struct {
 }
 
 func getAgentName(agentID int32) string {
-	// Map the agent id to a readable name.
+	// Map the agent id (int32) to a readable name (string).
 	switch agentID {
 	case 1:
 		return "Load"
@@ -64,7 +66,7 @@ func getAgentName(agentID int32) string {
 	}
 }
 func getAgentID(agentID string) int32 {
-	// Map the agent id to a readable name.
+	// Map the agent name (string) to an id (int32).
 	switch agentID {
 	case "Load":
 		return 1
@@ -78,6 +80,7 @@ func getAgentID(agentID string) int32 {
 }
 
 func storeParams(deviceID string, agentID int32, p agentParams, w api.WriteAPIBlocking, ctx context.Context) error {
+	/* Store the parameters in InfluxDB. */
 	entry := influxdb2.NewPoint(
 		MonitorConfig,
 		map[string]string{
@@ -95,13 +98,15 @@ func storeParams(deviceID string, agentID int32, p agentParams, w api.WriteAPIBl
 }
 
 func loadParams(client influxdb2.Client) error {
+	/* Load the parameters from InfluxDB. */
+
 	flux := fmt.Sprintf(`
 		from(bucket:"%s")
 		|> range(start:0)
 		|> filter(fn: (r) => r._measurement == "%s" 
 		and (r._field == "ScnFreq" or r._field == "TransMult"))`,
 		influxBucket, MonitorConfig)
-
+	// Create a query API instance
 	queryAPI := client.QueryAPI(influxOrg)
 	result, err := queryAPI.Query(context.Background(), flux)
 	if err != nil {
@@ -173,6 +178,8 @@ func getParams(deviceID string, agentID int32) (agentParams, bool) {
 }
 
 func (s *server) LoadData(ctx context.Context, in *pb.Metrics) (*pb.MetricsAck, error) {
+	/* Receive the metrics from the agent and store them in InfluxDB. */
+
 	// Create a blocking write API instance.
 	writeAPI := s.influxClient.WriteAPIBlocking(s.org, s.bucket)
 
@@ -204,9 +211,7 @@ func (s *server) LoadData(ctx context.Context, in *pb.Metrics) (*pb.MetricsAck, 
 		if err := writeAPI.WritePoint(ctx, entry); err != nil {
 			log.Printf("Error writing point to InfluxDB: %v", err)
 		}
-
-		// Log the metric for debugging purposes
-		// log.Printf("%s (%s): %.2f	(time: %s)", metric.DataName, agentName, metric.Data, metric.Timestamp.AsTime().Local().Format("2006-01-02 15:04:05"))
+		// Print the metric name and value to the console.
 		log.Printf("%s (%s): %.2f", metric.DataName, agentName, metric.Data)
 
 	}
@@ -222,7 +227,7 @@ func (s *server) LoadData(ctx context.Context, in *pb.Metrics) (*pb.MetricsAck, 
 
 }
 func (s *userService) ScanParams(ctx context.Context, in *pb.UserParams) (*pb.UserParamsAck, error) {
-
+	/* Receive the scan period and transmit multiplier for certaion agent from the user and store them in InfluxDB. */
 	writeAPI := s.influxClient.WriteAPIBlocking(s.org, s.bucket)
 
 	// Update the scan and transmit intervals based on user input.
@@ -235,7 +240,9 @@ func (s *userService) ScanParams(ctx context.Context, in *pb.UserParams) (*pb.Us
 		ScnFreq:   in.ScnFreq,
 		TransMult: in.TransMult,
 	}
-	setParams(in.DeviceId, in.AgentId, params)
+
+	setParams(in.DeviceId, in.AgentId, params) // Update the in-memory map
+	// Store the parameters in InfluxDB.
 	err := storeParams(in.DeviceId, in.AgentId, params, writeAPI, ctx)
 	if err != nil {
 		log.Printf("Error writing params to InfluxDB: %v", err)

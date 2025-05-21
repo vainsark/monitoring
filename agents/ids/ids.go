@@ -1,5 +1,7 @@
 package ids
 
+// Package ids contains the IDs and constants used by the agents and server.
+
 const (
 	LoadID         int32 = 1
 	LatencyID      int32 = 2
@@ -10,12 +12,6 @@ const (
 	// DeviceId   = "Raspberry_Pi_2"
 
 	ServerIP = "localhost"
-
-	CPUID      = 1
-	MemoryID   = 2
-	DiskID     = 3
-	NetworkID  = 4
-	SensoricID = 5
 
 	StorageID = "sda" // Linux (generic, can be changed based on the system
 	// StorageID = "mmcblk0" // Raspberry Pi (generic, can be changed based on the system

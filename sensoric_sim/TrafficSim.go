@@ -1,5 +1,7 @@
 package main
 
+// This code simulates sensor writes read over I2C, and write counters to a file.
+
 import (
 	"fmt"
 	"math/rand"
